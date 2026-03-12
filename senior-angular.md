@@ -2,7 +2,7 @@
 
 **Versão:** Angular 18+ (compatível com 14-18)  
 **Objetivo:** Preparação completa para entrevistas técnicas de nível Senior  
-**Foco:** Conceitos essenciais + Boas práticas + Comparação de versões
+**Foco:** Conceitos essenciais + Boas práticas + Comparação de versões + Arquitetura
 
 ---
 
@@ -29,9 +29,13 @@
 19. [Animations](#19-animations)
 20. [SSR (Server-Side Rendering)](#20-ssr)
 21. [PWA (Progressive Web Apps)](#21-pwa)
-22. [Boas Práticas & Design Patterns](#22-boas-praticas)
-23. [Comparação de Versões do Angular](#23-comparacao-versoes)
-24. [Dicas para Entrevista Senior](#24-dicas-entrevista)
+22. [State Management](#22-state-management)
+23. [Security](#23-security)
+24. [Internacionalização (i18n)](#24-i18n)
+25. [Boas Práticas & Design Patterns](#25-boas-praticas)
+26. [Arquitetura de Projetos Grandes](#26-arquitetura)
+27. [Comparação de Versões do Angular](#27-comparacao-versoes)
+28. [Dicas para Entrevista Senior](#28-dicas-entrevista)
 
 ---
 
@@ -67,7 +71,36 @@ export class UserComponent {
 }
 ```
 
-### 1.2 Data Binding - 4 Tipos
+### 1.2 Component Metadata - Todas as Opções
+
+```typescript
+@Component({
+  selector: 'app-user',                          // CSS selector
+  templateUrl: './user.component.html',           // Template externo
+  // template: `<div>Inline</div>`,              // OU inline
+  styleUrls: ['./user.component.scss'],           // Estilos externos
+  // styles: [`div { color: red; }`],            // OU inline
+  changeDetection: ChangeDetectionStrategy.OnPush,// Estratégia CD
+  encapsulation: ViewEncapsulation.Emulated,      // Default - scoped CSS
+  // ViewEncapsulation.None    → CSS global
+  // ViewEncapsulation.ShadowDom → Shadow DOM real
+  providers: [LocalService],                      // DI local
+  animations: [fadeInOut],                        // Animações
+  host: {                                         // Host bindings
+    '[class.active]': 'isActive',
+    '(click)': 'onClick()',
+    'role': 'button'
+  },
+  exportAs: 'appUser'                             // Permite #ref="appUser"
+})
+```
+
+**Quando usar cada ViewEncapsulation:**
+- `Emulated` (default) → 99% dos casos, isola CSS por component
+- `None` → Estilos globais, útil para temas ou override de libs
+- `ShadowDom` → Encapsulamento real do browser, limitação: não funciona em IE
+
+### 1.3 Data Binding - 4 Tipos
 
 | Tipo | Sintaxe | Direção | Exemplo | Quando Usar |
 |------|---------|---------|---------|-------------|
@@ -76,7 +109,16 @@ export class UserComponent {
 | **Event Binding** | `(event)` | View → Component | `(click)="save()"` | Escutar eventos |
 | **Two-Way Binding** | `[(ngModel)]` | Ambas direções | `[(ngModel)]="name"` | Forms simples |
 
-### 1.3 Property Binding - Exemplos
+**Por baixo dos panos:** Two-way binding é açúcar sintático:
+```html
+<!-- Isto: -->
+<input [(ngModel)]="name">
+
+<!-- É equivalente a: -->
+<input [ngModel]="name" (ngModelChange)="name = $event">
+```
+
+### 1.4 Property Binding - Exemplos
 
 ```html
 <!-- Propriedades HTML padrão -->
@@ -87,10 +129,12 @@ export class UserComponent {
 <!-- Atributos (quando não há property correspondente) -->
 <div [attr.data-id]="userId"></div>
 <div [attr.aria-label]="description"></div>
+<td [attr.colspan]="colSpan"></td>
 
 <!-- Classes CSS -->
 <div [class.active]="isActive"></div>
 <div [ngClass]="{'active': isActive, 'disabled': !isEnabled}"></div>
+<div [ngClass]="classArray"></div>   <!-- ['class1', 'class2'] -->
 
 <!-- Estilos -->
 <div [style.color]="textColor"></div>
@@ -102,7 +146,20 @@ export class UserComponent {
 - `[class.active]="isActive"` → Toggle de UMA classe
 - `[ngClass]="{...}"` → Múltiplas classes condicionais
 
-### 1.4 Diretivas Estruturais
+**Property vs Attribute binding (pergunta de entrevista):**
+```html
+<!-- Property: altera a propriedade DOM do elemento -->
+<input [value]="name">  <!-- input.value = name -->
+
+<!-- Attribute: altera o atributo HTML -->
+<input [attr.value]="name">  <!-- input.setAttribute('value', name) -->
+
+<!-- Diferença prática: colspan não tem property DOM -->
+<td [attr.colspan]="2"></td>  <!-- ✅ Funciona -->
+<td [colspan]="2"></td>       <!-- ❌ Erro -->
+```
+
+### 1.5 Diretivas Estruturais
 
 #### **\*ngIf**
 
@@ -117,6 +174,11 @@ export class UserComponent {
 <ng-template #loginTemplate>
   <button>Login</button>
 </ng-template>
+
+<!-- Com then/else -->
+<div *ngIf="isLoading; then loadingTpl; else contentTpl"></div>
+<ng-template #loadingTpl><spinner></spinner></ng-template>
+<ng-template #contentTpl><app-content></app-content></ng-template>
 
 <!-- Com variável local (evita async pipe duplo) -->
 <div *ngIf="user$ | async as user">
@@ -137,8 +199,10 @@ export class UserComponent {
              let first = first;
              let last = last;
              let even = even;
-             let odd = odd">
-  {{ i }}. {{ item }}
+             let odd = odd;
+             let count = count">
+  <span [class.highlight]="first">{{ i }}. {{ item }}</span>
+  <span *ngIf="last"> (Total: {{ count }})</span>
 </div>
 
 <!-- ⚠️ CRÍTICO: trackBy para performance -->
@@ -178,7 +242,41 @@ Com trackBy:
 </div>
 ```
 
-### 1.5 ng-container - Wrapper sem DOM
+#### **Novo Control Flow (Angular 17+) - IMPORTANTE**
+
+```html
+<!-- @if substitui *ngIf -->
+@if (user) {
+  <div>{{ user.name }}</div>
+} @else if (isLoading) {
+  <spinner />
+} @else {
+  <div>Login</div>
+}
+
+<!-- @for substitui *ngFor (track é OBRIGATÓRIO) -->
+@for (item of items; track item.id) {
+  <div>{{ item.name }}</div>
+} @empty {
+  <div>Nenhum item encontrado</div>
+}
+
+<!-- @switch substitui ngSwitch -->
+@switch (status) {
+  @case ('loading') { <spinner /> }
+  @case ('error') { <error-message /> }
+  @default { <app-content /> }
+}
+```
+
+**Vantagens do novo control flow:**
+- Syntax mais limpa e legível
+- `@empty` block no @for (antes era manual)
+- `track` obrigatório (força boa prática)
+- Performance melhor (compilado diferente)
+- Não precisa importar CommonModule
+
+### 1.6 ng-container - Wrapper sem DOM
 
 ```html
 <!-- ❌ Cria <div> desnecessária -->
@@ -192,6 +290,36 @@ Com trackBy:
   <p>Item 1</p>
   <p>Item 2</p>
 </ng-container>
+
+<!-- ✅ Combinar múltiplas diretivas (não pode ter 2 structural directives no mesmo elemento) -->
+<ng-container *ngIf="showList">
+  <div *ngFor="let item of items">{{ item }}</div>
+</ng-container>
+```
+
+### 1.7 ng-template - Template Reutilizável
+
+```html
+<!-- Definir template -->
+<ng-template #myTemplate let-name let-age="age">
+  <div>Nome: {{ name }}, Idade: {{ age }}</div>
+</ng-template>
+
+<!-- Usar com ngTemplateOutlet -->
+<ng-container *ngTemplateOutlet="myTemplate; context: { $implicit: 'João', age: 30 }">
+</ng-container>
+
+<!-- Pattern: Template condicional reutilizável -->
+<ng-container *ngTemplateOutlet="isAdmin ? adminTpl : userTpl; context: { $implicit: user }">
+</ng-container>
+
+<ng-template #adminTpl let-user>
+  <admin-panel [user]="user"></admin-panel>
+</ng-template>
+
+<ng-template #userTpl let-user>
+  <user-dashboard [user]="user"></user-dashboard>
+</ng-template>
 ```
 
 ---
@@ -204,9 +332,16 @@ Com trackBy:
 ```typescript
 // FILHO: user-card.component.ts
 export class UserCardComponent {
-  @Input() user!: User;              // Obrigatório
+  @Input() user!: User;              // Obrigatório (! = definite assignment)
   @Input() showEmail = true;         // Opcional com default
   @Input('userName') name?: string;  // Com alias
+  
+  // Angular 16+: required input
+  @Input({ required: true }) userId!: number;
+  
+  // Angular 16+: transform
+  @Input({ transform: booleanAttribute }) disabled = false;
+  @Input({ transform: numberAttribute }) size = 16;
 }
 ```
 
@@ -214,8 +349,24 @@ export class UserCardComponent {
 <!-- PAI -->
 <app-user-card 
   [user]="currentUser" 
-  [showEmail]="false">
+  [showEmail]="false"
+  [userId]="42"
+  disabled>  <!-- booleanAttribute converte string vazia para true -->
 </app-user-card>
+```
+
+**Input com setter (reagir a mudanças):**
+```typescript
+export class UserCardComponent {
+  private _user!: User;
+  
+  @Input()
+  set user(value: User) {
+    this._user = value;
+    this.processUser(value);  // Lógica quando Input muda
+  }
+  get user(): User { return this._user; }
+}
 ```
 
 ### 2.2 @Output - Filho → Pai
@@ -226,9 +377,14 @@ export class UserCardComponent {
   @Input() user!: User;
   @Output() deleted = new EventEmitter<number>();
   @Output() edited = new EventEmitter<User>();
+  @Output('userSelected') selected = new EventEmitter<User>(); // Com alias
   
   onDelete() {
     this.deleted.emit(this.user.id);
+  }
+  
+  onEdit() {
+    this.edited.emit({ ...this.user, name: 'Editado' });
   }
 }
 ```
@@ -238,11 +394,55 @@ export class UserCardComponent {
 <app-user-card 
   [user]="user"
   (deleted)="handleDelete($event)"
-  (edited)="handleEdit($event)">
+  (edited)="handleEdit($event)"
+  (userSelected)="handleSelect($event)">
 </app-user-card>
 ```
 
-### 2.3 Pattern: Smart vs Dumb Components
+### 2.3 Service Compartilhado (Siblings / Não relacionados)
+
+```typescript
+// Quando components NÃO têm relação pai-filho
+@Injectable({ providedIn: 'root' })
+export class NotificationService {
+  private notificationSubject = new Subject<Notification>();
+  notifications$ = this.notificationSubject.asObservable();
+  
+  send(notification: Notification): void {
+    this.notificationSubject.next(notification);
+  }
+}
+
+// Component A (envia)
+export class HeaderComponent {
+  constructor(private notificationService: NotificationService) {}
+  
+  notify() {
+    this.notificationService.send({ type: 'success', message: 'Salvo!' });
+  }
+}
+
+// Component B (recebe)
+export class ToastComponent implements OnInit, OnDestroy {
+  private destroy$ = new Subject<void>();
+  notifications: Notification[] = [];
+  
+  constructor(private notificationService: NotificationService) {}
+  
+  ngOnInit() {
+    this.notificationService.notifications$.pipe(
+      takeUntil(this.destroy$)
+    ).subscribe(n => this.notifications.push(n));
+  }
+  
+  ngOnDestroy() {
+    this.destroy$.next();
+    this.destroy$.complete();
+  }
+}
+```
+
+### 2.4 Pattern: Smart vs Dumb Components
 
 | Aspecto | Dumb (Presentational) | Smart (Container) |
 |---------|----------------------|-------------------|
@@ -252,30 +452,79 @@ export class UserCardComponent {
 | **Services** | NÃO usa | Injeta e usa |
 | **Reutilizável** | SIM | Geralmente não |
 | **Testável** | Muito fácil | Mais complexo |
+| **Change Detection** | OnPush (sempre) | Default ou OnPush |
 
-**Exemplo:**
+**Exemplo Completo:**
 
 ```typescript
-// DUMB - Só apresenta dados
-@Component({ selector: 'app-product-card' })
+// ========== DUMB - Só apresenta dados ==========
+@Component({
+  selector: 'app-product-card',
+  changeDetection: ChangeDetectionStrategy.OnPush,
+  template: `
+    <div class="card">
+      <img [src]="product.image" [alt]="product.name">
+      <h3>{{ product.name }}</h3>
+      <p>{{ product.price | currency:'BRL' }}</p>
+      <button (click)="addToCart.emit(product)">Comprar</button>
+    </div>
+  `
+})
 export class ProductCardComponent {
-  @Input() product!: Product;
+  @Input({ required: true }) product!: Product;
   @Output() addToCart = new EventEmitter<Product>();
-  @Output() viewDetails = new EventEmitter<number>();
 }
 
-// SMART - Orquestra lógica
-@Component({ selector: 'app-product-list' })
+// ========== SMART - Orquestra lógica ==========
+@Component({
+  selector: 'app-product-list',
+  template: `
+    <div class="filters">
+      <input (input)="onSearch($event)">
+    </div>
+    <app-product-card 
+      *ngFor="let product of filteredProducts$ | async; trackBy: trackById"
+      [product]="product"
+      (addToCart)="onAddToCart($event)">
+    </app-product-card>
+    <app-loading *ngIf="loading$ | async"></app-loading>
+    <app-empty-state *ngIf="(filteredProducts$ | async)?.length === 0"></app-empty-state>
+  `
+})
 export class ProductListComponent {
-  products$ = this.productService.getProducts();
+  private searchTerm$ = new BehaviorSubject<string>('');
+  loading$ = new BehaviorSubject<boolean>(true);
+  
+  filteredProducts$ = combineLatest([
+    this.productService.getProducts().pipe(
+      tap(() => this.loading$.next(false))
+    ),
+    this.searchTerm$
+  ]).pipe(
+    map(([products, term]) => 
+      products.filter(p => p.name.toLowerCase().includes(term.toLowerCase()))
+    )
+  );
   
   constructor(
     private productService: ProductService,
-    private cartService: CartService
+    private cartService: CartService,
+    private snackbar: MatSnackBar
   ) {}
   
+  onSearch(event: Event) {
+    this.searchTerm$.next((event.target as HTMLInputElement).value);
+  }
+  
   onAddToCart(product: Product) {
-    this.cartService.add(product);
+    this.cartService.add(product).subscribe({
+      next: () => this.snackbar.open('Adicionado ao carrinho!'),
+      error: (err) => this.snackbar.open('Erro ao adicionar')
+    });
+  }
+  
+  trackById(index: number, product: Product): number {
+    return product.id;
   }
 }
 ```
@@ -299,38 +548,62 @@ export class ProductListComponent {
 | `ngAfterViewChecked` | Após checar view | Raramente usado |
 | `ngOnDestroy` | Antes de destruir component | **Cleanup (unsubscribe)** |
 
-### 3.2 Exemplo Prático
+**Fluxo visual:**
+```
+constructor → ngOnChanges → ngOnInit → ngDoCheck
+                                          ↓
+ngAfterContentInit → ngAfterContentChecked → ngAfterViewInit → ngAfterViewChecked
+                                                                      ↓
+                         (repete a cada CD cycle) ←←←←←←←←←←←←←←←←←←←
+
+                                     ngOnDestroy (quando component é removido)
+```
+
+### 3.2 Exemplo Prático Completo
 
 ```typescript
-export class UserComponent implements OnInit, OnChanges, OnDestroy {
+export class UserComponent implements OnInit, OnChanges, AfterViewInit, OnDestroy {
   @Input() userId!: number;
+  @ViewChild('nameInput') nameInput!: ElementRef;
   
   private destroy$ = new Subject<void>();
   user?: User;
   
   constructor(private userService: UserService) {
     // ❌ NÃO acessa @Input aqui (ainda undefined)
+    // ❌ NÃO acessa @ViewChild aqui (DOM não existe)
     // ✅ SÓ injeção de dependências
   }
   
   ngOnChanges(changes: SimpleChanges) {
     // Dispara quando @Input muda
     if (changes['userId']) {
-      const previousId = changes['userId'].previousValue;
-      const currentId = changes['userId'].currentValue;
-      console.log(`User ID mudou: ${previousId} → ${currentId}`);
-      this.loadUser(currentId);
+      const change = changes['userId'];
+      console.log(`User ID mudou: ${change.previousValue} → ${change.currentValue}`);
+      console.log(`É primeira mudança? ${change.firstChange}`);
+      
+      // Recarrega dados quando Input muda
+      if (!change.firstChange) {
+        this.loadUser(change.currentValue);
+      }
     }
   }
   
   ngOnInit() {
     // @Input já disponível aqui
     // MELHOR lugar para HTTP calls iniciais
-    this.loadInitialData();
+    this.loadUser(this.userId);
+    this.setupRealtimeUpdates();
+  }
+  
+  ngAfterViewInit() {
+    // DOM renderizado, @ViewChild disponível
+    this.nameInput.nativeElement.focus();
+    // ⚠️ Cuidado: mudar propriedades aqui pode causar ExpressionChangedAfterItHasBeenCheckedError
   }
   
   ngOnDestroy() {
-    // ESSENCIAL: limpar subscriptions
+    // ESSENCIAL: limpar subscriptions, timers, event listeners
     this.destroy$.next();
     this.destroy$.complete();
   }
@@ -339,6 +612,14 @@ export class UserComponent implements OnInit, OnChanges, OnDestroy {
     this.userService.getUser(id).pipe(
       takeUntil(this.destroy$)
     ).subscribe(user => this.user = user);
+  }
+  
+  private setupRealtimeUpdates() {
+    this.userService.onUserUpdate().pipe(
+      takeUntil(this.destroy$)
+    ).subscribe(update => {
+      // Atualiza em tempo real
+    });
   }
 }
 ```
@@ -358,12 +639,35 @@ ngOnInit() {
   this.service.getData().subscribe(data => {
     this.data = data;
   });
-  // Memory leak! Subscription não é cancelada
+  // Memory leak! Subscription não é cancelada quando component é destruído
 }
 ```
 
-✅ **Correto:**
+❌ **Erro 3: Modificar estado no AfterViewInit sem detectChanges**
 ```typescript
+ngAfterViewInit() {
+  this.title = 'Novo'; // ExpressionChangedAfterItHasBeenCheckedError!
+  
+  // ✅ Correto:
+  setTimeout(() => this.title = 'Novo'); // Ou
+  this.cdr.detectChanges(); // Ou usar OnPush
+}
+```
+
+❌ **Erro 4: HTTP call no constructor**
+```typescript
+constructor(private http: HttpClient) {
+  this.http.get('/api/data').subscribe(); // ❌ Difícil de testar
+}
+// ✅ Sempre no ngOnInit
+```
+
+✅ **Padrões Corretos de Unsubscribe (4 formas):**
+
+```typescript
+// 1. takeUntil (mais comum)
+private destroy$ = new Subject<void>();
+
 ngOnInit() {
   this.service.getData().pipe(
     takeUntil(this.destroy$)
@@ -373,6 +677,25 @@ ngOnInit() {
 ngOnDestroy() {
   this.destroy$.next();
   this.destroy$.complete();
+}
+
+// 2. async pipe (preferido no template)
+// Faz unsubscribe automático!
+<div *ngIf="data$ | async as data">{{ data }}</div>
+
+// 3. takeUntilDestroyed (Angular 16+) - MAIS ELEGANTE
+constructor() {
+  this.service.getData().pipe(
+    takeUntilDestroyed()  // Sem boilerplate!
+  ).subscribe(data => this.data = data);
+}
+
+// 4. DestroyRef (Angular 16+)
+constructor() {
+  const destroyRef = inject(DestroyRef);
+  
+  const sub = this.service.getData().subscribe(data => this.data = data);
+  destroyRef.onDestroy(() => sub.unsubscribe());
 }
 ```
 
@@ -399,38 +722,130 @@ export class UserService {
     );
   }
   
+  getUser(id: number): Observable<User> {
+    return this.http.get<User>(`${this.apiUrl}/users/${id}`);
+  }
+  
+  createUser(user: CreateUserDto): Observable<User> {
+    return this.http.post<User>(`${this.apiUrl}/users`, user);
+  }
+  
+  updateUser(id: number, user: Partial<User>): Observable<User> {
+    return this.http.patch<User>(`${this.apiUrl}/users/${id}`, user);
+  }
+  
+  deleteUser(id: number): Observable<void> {
+    return this.http.delete<void>(`${this.apiUrl}/users/${id}`);
+  }
+  
   private handleError(error: HttpErrorResponse): Observable<never> {
-    console.error('Erro:', error);
-    return throwError(() => new Error('Erro ao carregar dados'));
+    let message = 'Erro desconhecido';
+    
+    if (error.error instanceof ErrorEvent) {
+      // Erro client-side (network, etc)
+      message = error.error.message;
+    } else {
+      // Erro server-side
+      switch (error.status) {
+        case 400: message = 'Dados inválidos'; break;
+        case 401: message = 'Não autorizado'; break;
+        case 403: message = 'Sem permissão'; break;
+        case 404: message = 'Não encontrado'; break;
+        case 500: message = 'Erro interno do servidor'; break;
+      }
+    }
+    
+    return throwError(() => new Error(message));
   }
 }
 ```
 
 ### 4.2 Níveis de Injeção (Scopes)
 
-| Scope | Sintaxe | Quando Usar | Benefícios |
+| Scope | Sintaxe | Quando Usar | Instâncias |
 |-------|---------|-------------|------------|
-| **Root** | `providedIn: 'root'` | 95% dos casos | Singleton, tree-shakeable |
-| **Module** | `providedIn: MyModule` | Feature isolada | Compartilhado no módulo |
-| **Component** | `providers: [Service]` | Estado local | Nova instância por component |
+| **Root** | `providedIn: 'root'` | 95% dos casos | 1 (Singleton) |
+| **Module** | `providedIn: MyModule` | Feature isolada | 1 por módulo lazy |
+| **Component** | `providers: [Service]` | Estado local | 1 por component |
+| **Directive** | `providers: [Service]` | Estado por diretiva | 1 por diretiva |
 
 ```typescript
-// Root (recomendado)
+// Root (recomendado - tree-shakeable)
 @Injectable({ providedIn: 'root' })
 export class AuthService {}
 
-// Module
+// Module (carregado com lazy module)
 @Injectable({ providedIn: AdminModule })
 export class AdminService {}
 
-// Component (raro)
+// Component (nova instância por component)
 @Component({
-  providers: [LocalService]
+  providers: [FormStateService]  // Cada instância tem seu estado
 })
-export class MyComponent {}
+export class UserFormComponent {
+  constructor(private formState: FormStateService) {}
+}
 ```
 
-### 4.3 Cache com shareReplay
+**Quando usar Component-level provider (pergunta de entrevista):**
+- Formulário com estado local
+- Dialog/Modal com dados isolados
+- Componente reutilizável que precisa de estado independente
+- Exemplo: dois `<app-cart>` na mesma tela, cada um com seu CartService
+
+### 4.3 Injection Tokens & Factories
+
+```typescript
+// InjectionToken para valores não-classe
+export const API_URL = new InjectionToken<string>('API_URL');
+export const IS_PRODUCTION = new InjectionToken<boolean>('IS_PRODUCTION');
+
+// Configuração de interfaces (não pode injetar interface diretamente)
+export const LOGGER = new InjectionToken<Logger>('LOGGER');
+
+export interface Logger {
+  log(message: string): void;
+  error(message: string): void;
+}
+
+// Provider com factory
+providers: [
+  { provide: API_URL, useValue: environment.apiUrl },
+  { provide: IS_PRODUCTION, useValue: environment.production },
+  { 
+    provide: LOGGER, 
+    useFactory: (isProd: boolean) => {
+      return isProd ? new ProductionLogger() : new ConsoleLogger();
+    },
+    deps: [IS_PRODUCTION]
+  }
+]
+
+// Uso
+constructor(@Inject(API_URL) private apiUrl: string) {}
+```
+
+### 4.4 Tipos de Providers
+
+```typescript
+// useClass - instancia a classe
+{ provide: Logger, useClass: ConsoleLogger }
+
+// useExisting - alias para outro provider
+{ provide: AbstractLogger, useExisting: ConsoleLogger }
+
+// useValue - valor estático
+{ provide: API_URL, useValue: 'https://api.example.com' }
+
+// useFactory - lógica customizada
+{ 
+  provide: CacheService,
+  useFactory: (http: HttpClient) => new CacheService(http, 300),
+  deps: [HttpClient]
+}
+```
+
+### 4.5 Cache com shareReplay
 
 ```typescript
 @Injectable({ providedIn: 'root' })
@@ -448,6 +863,25 @@ export class UserService {
     }
     return this.usersCache$;
   }
+  
+  // Cache com TTL (Time to Live)
+  private cacheTimestamp = 0;
+  private readonly CACHE_TTL = 60000; // 1 minuto
+  
+  getUsersWithTTL(): Observable<User[]> {
+    const now = Date.now();
+    if (!this.usersCache$ || (now - this.cacheTimestamp) > this.CACHE_TTL) {
+      this.cacheTimestamp = now;
+      this.usersCache$ = this.http.get<User[]>('/api/users').pipe(
+        shareReplay(1)
+      );
+    }
+    return this.usersCache$;
+  }
+  
+  invalidateCache(): void {
+    this.usersCache$ = undefined;
+  }
 }
 ```
 
@@ -456,12 +890,128 @@ export class UserService {
 - ✅ Cache automático em memória
 - ✅ `refCount: true` libera memória quando não usado
 
+### 4.6 Facade Pattern (Padrão Avançado)
+
+```typescript
+// Facade: simplifica interface complexa
+@Injectable({ providedIn: 'root' })
+export class UserFacade {
+  // Estado
+  private loadingSubject = new BehaviorSubject<boolean>(false);
+  private usersSubject = new BehaviorSubject<User[]>([]);
+  private errorSubject = new BehaviorSubject<string | null>(null);
+  
+  // Selectores públicos (read-only)
+  loading$ = this.loadingSubject.asObservable();
+  users$ = this.usersSubject.asObservable();
+  error$ = this.errorSubject.asObservable();
+  
+  constructor(
+    private userApi: UserApiService,
+    private notificationService: NotificationService
+  ) {}
+  
+  // Ações (o component chama isso)
+  loadUsers(): void {
+    this.loadingSubject.next(true);
+    this.errorSubject.next(null);
+    
+    this.userApi.getUsers().pipe(
+      finalize(() => this.loadingSubject.next(false))
+    ).subscribe({
+      next: users => this.usersSubject.next(users),
+      error: err => {
+        this.errorSubject.next('Erro ao carregar');
+        this.notificationService.showError(err);
+      }
+    });
+  }
+  
+  deleteUser(id: number): void {
+    this.userApi.deleteUser(id).subscribe({
+      next: () => {
+        const updated = this.usersSubject.value.filter(u => u.id !== id);
+        this.usersSubject.next(updated);
+        this.notificationService.showSuccess('Usuário removido');
+      },
+      error: err => this.notificationService.showError(err)
+    });
+  }
+}
+
+// Component fica limpo
+@Component({ ... })
+export class UserListComponent implements OnInit {
+  users$ = this.facade.users$;
+  loading$ = this.facade.loading$;
+  
+  constructor(private facade: UserFacade) {}
+  
+  ngOnInit() { this.facade.loadUsers(); }
+  onDelete(id: number) { this.facade.deleteUser(id); }
+}
+```
+
 ---
 
 <a name="5-rxjs"></a>
 ## 5. RxJS & OBSERVABLES
 
-### 5.1 Operators Essenciais para Senior
+### 5.1 Observable vs Promise
+
+| Feature | Observable | Promise |
+|---------|-----------|---------|
+| **Execução** | Lazy (só quando subscribe) | Eager (executa imediato) |
+| **Valores** | Múltiplos ao longo do tempo | Um único valor |
+| **Cancelamento** | Sim (unsubscribe) | Não |
+| **Operadores** | 100+ (map, filter, etc) | then, catch, finally |
+| **Retry** | Built-in | Manual |
+
+```typescript
+// Promise - executa imediatamente
+const promise = fetch('/api/users'); // Já está executando!
+
+// Observable - só executa quando alguém subscribes
+const obs$ = this.http.get('/api/users'); // Nada acontece
+obs$.subscribe(data => ...); // Agora executa!
+```
+
+### 5.2 Subjects - Tipos e Quando Usar
+
+```typescript
+// Subject - Não tem valor inicial, emissor manual
+const subject = new Subject<string>();
+subject.subscribe(v => console.log(v)); // Esperando...
+subject.next('A'); // 'A'
+
+// BehaviorSubject - TEM valor inicial, novos subscribers recebem último valor
+const behavior = new BehaviorSubject<string>('inicial');
+behavior.subscribe(v => console.log(v)); // 'inicial' (imediato!)
+behavior.next('A'); // 'A'
+behavior.getValue(); // 'A' (acesso síncrono)
+
+// ReplaySubject - Replay N últimos valores para novos subscribers
+const replay = new ReplaySubject<string>(2); // Buffer de 2
+replay.next('A');
+replay.next('B');
+replay.next('C');
+replay.subscribe(v => console.log(v)); // 'B', 'C' (últimos 2)
+
+// AsyncSubject - Só emite o ÚLTIMO valor, e só quando completa
+const async$ = new AsyncSubject<string>();
+async$.next('A');
+async$.next('B');
+async$.subscribe(v => console.log(v)); // Nada ainda...
+async$.complete(); // 'B' (agora emite)
+```
+
+**Quando usar cada um:**
+- `Subject` → Event bus, notificações (sem estado)
+- `BehaviorSubject` → Estado reativo (filtros, user logado, tema)
+- `ReplaySubject` → Quando novos subscribers precisam do histórico
+- `AsyncSubject` → Resolver tipo Promise (um valor final)
+
+### 5.3 Operators Essenciais para Senior
 
 | Operator | O que faz | Quando Usar | Exemplo |
 |----------|-----------|-------------|---------|
@@ -473,121 +1023,219 @@ export class UserService {
 | **concatMap** | Um por vez, ordenado | Fila ordenada | Ver exemplo abaixo |
 | **exhaustMap** | Ignora novos até terminar | Previne double-click | Ver exemplo abaixo |
 | **debounceTime** | Espera silêncio | Input de busca | `debounceTime(300)` |
+| **throttleTime** | Limita emissões | Scroll, resize | `throttleTime(200)` |
 | **distinctUntilChanged** | Só emite se mudou | Evita duplicados | Combinar com debounce |
 | **catchError** | Tratamento de erro | Fallback quando falha | `catchError(() => of([]))` |
 | **retry** | Tenta novamente | Resiliência HTTP | `retry(2)` |
+| **retryWhen** | Retry com lógica | Retry com delay | Ver exemplo |
 | **shareReplay** | Cache Observable | HTTP compartilhado | Ver seção anterior |
 | **takeUntil** | Cancela quando emite | Unsubscribe automático | Pattern destroy$ |
+| **take** | Pega N valores e completa | Pegar só o primeiro | `take(1)` |
+| **skip** | Pula N valores | Ignorar valor inicial | `skip(1)` |
+| **startWith** | Emite valor inicial | Estado default | `startWith([])` |
+| **withLatestFrom** | Combina com último valor | Pegar contexto atual | Ver exemplo |
 | **combineLatest** | Combina múltiplos Observables | Filtros combinados | Ver exemplo abaixo |
 | **forkJoin** | Promise.all para Observables | Múltiplos HTTP paralelos | Ver exemplo abaixo |
+| **pairwise** | Valor atual + anterior | Comparar mudanças | `pairwise()` |
+| **scan** | Acumulador (reduce reativo) | Contadores, estado | `scan((acc, val) => acc + val, 0)` |
+| **finalize** | Executa ao completar/erro | Esconder loading | `finalize(() => loading = false)` |
 
-### 5.2 switchMap vs mergeMap vs concatMap vs exhaustMap
+### 5.4 switchMap vs mergeMap vs concatMap vs exhaustMap
 
 **A pergunta MAIS COMUM em entrevistas:**
 
+```
+switchMap  → "Troque para o mais recente" (cancela anterior)
+mergeMap   → "Execute todos em paralelo" (não cancela nada)
+concatMap  → "Execute em fila" (um de cada vez, em ordem)
+exhaustMap → "Ignore novos enquanto ocupado" (ignora durante execução)
+```
+
 ```typescript
 // switchMap - Cancela requisição anterior
-// Use: Search, autocomplete
+// Use: Search, autocomplete, navegação
 this.searchControl.valueChanges.pipe(
   debounceTime(300),
-  switchMap(term => this.api.search(term))  // Cancela search anterior
+  switchMap(term => this.api.search(term))
+  // Se digitar "ang" e depois "angular":
+  // Cancela a busca por "ang" e busca "angular"
 ).subscribe(results => this.results = results);
 
-// mergeMap - Todas em paralelo
-// Use: Batch uploads, não importa ordem
+// mergeMap - Todas em paralelo (cuidado com ordem!)
+// Use: Upload de múltiplos arquivos, fire-and-forget
 from(files).pipe(
-  mergeMap(file => this.uploadFile(file))  // Todos uploads ao mesmo tempo
+  mergeMap(file => this.uploadFile(file), 3)  // Máximo 3 paralelos
+  //                                      ↑ concurrency limit
 ).subscribe(result => console.log(result));
 
 // concatMap - Uma por vez, em ordem
-// Use: Processar fila ordenada
-from([1, 2, 3]).pipe(
-  concatMap(id => this.api.getUser(id))  // Espera 1 terminar antes de chamar 2
-).subscribe(user => console.log(user));
+// Use: Operações que dependem da anterior, processar fila
+from([createUser, addAddress, addPayment]).pipe(
+  concatMap(action => action())
+  // Espera createUser terminar antes de addAddress
+).subscribe();
 
 // exhaustMap - Ignora novos até terminar
-// Use: Prevenir double-click em botão
-this.loginButton.clicks$.pipe(
-  exhaustMap(() => this.authService.login())  // Ignora cliques enquanto processa
-).subscribe(result => console.log(result));
+// Use: Submit de form, login button, prevenir double-click
+fromEvent(saveBtn, 'click').pipe(
+  exhaustMap(() => this.saveForm())
+  // Se clicar 5x rápido, só executa 1 saveForm()
+).subscribe();
 ```
 
-### 5.3 Autocomplete Perfeito (Exemplo Completo)
+**Resumo visual:**
+```
+switchMap:   --A----B----C-->   →   --a]---b]---c-->    (cancela anterior)
+mergeMap:    --A----B----C-->   →   --a--a-b-b-c-c-->   (todos paralelos)
+concatMap:   --A----B----C-->   →   --aaaa-bbbb-cccc->  (fila ordenada)
+exhaustMap:  --A----B----C-->   →   --aaaa-------cccc-> (ignora B)
+```
+
+### 5.5 Autocomplete Perfeito (Exemplo Completo)
 
 ```typescript
 export class SearchComponent implements OnInit {
   searchControl = new FormControl('');
   results: Product[] = [];
   loading = false;
+  error: string | null = null;
   
   ngOnInit() {
     this.searchControl.valueChanges.pipe(
       debounceTime(300),              // Espera 300ms sem digitação
       distinctUntilChanged(),         // Só emite se valor mudou
-      tap(() => this.loading = true), // Mostra loading
+      tap(() => {
+        this.loading = true;
+        this.error = null;
+      }),
+      filter(term => term.length >= 2),  // Mínimo 2 caracteres
       switchMap(term => 
         this.searchService.search(term).pipe(
-          catchError(() => of([]))    // Retorna [] em caso de erro
+          catchError(err => {
+            this.error = 'Erro na busca';
+            return of([]);            // Retorna [] em caso de erro
+          })
         )
       ),
-      tap(() => this.loading = false) // Esconde loading
+      tap(() => this.loading = false)
     ).subscribe(results => this.results = results);
   }
 }
 ```
 
-### 5.4 combineLatest - Combinar Filtros
+### 5.6 combineLatest vs forkJoin vs withLatestFrom vs zip
 
 ```typescript
-export class ProductListComponent {
-  categoryFilter$ = new BehaviorSubject<string>('all');
-  priceFilter$ = new BehaviorSubject<string>('all');
-  products$ = this.productService.getProducts();
-  
-  filteredProducts$ = combineLatest([
-    this.products$,
-    this.categoryFilter$,
-    this.priceFilter$
-  ]).pipe(
-    map(([products, category, price]) => {
-      let filtered = products;
-      
-      if (category !== 'all') {
-        filtered = filtered.filter(p => p.category === category);
-      }
-      
-      if (price === 'low') {
-        filtered = filtered.filter(p => p.price < 100);
-      } else if (price === 'high') {
-        filtered = filtered.filter(p => p.price >= 100);
-      }
-      
-      return filtered;
-    })
-  );
-  
-  setCategory(category: string) {
-    this.categoryFilter$.next(category);
-  }
-  
-  setPrice(price: string) {
-    this.priceFilter$.next(price);
-  }
-}
-```
+// combineLatest - Emite quando QUALQUER um emite (precisa que todos tenham emitido pelo menos 1x)
+// Use: Filtros combinados, estado derivado
+combineLatest([
+  this.products$,       // Emite quando produtos mudam
+  this.categoryFilter$, // Emite quando filtro muda
+  this.sortOrder$       // Emite quando ordenação muda
+]).pipe(
+  map(([products, category, sort]) => {
+    // Recalcula sempre que qualquer coisa muda
+    return this.applyFiltersAndSort(products, category, sort);
+  })
+);
 
-### 5.5 forkJoin - Múltiplos HTTP Paralelos
-
-```typescript
-// Carrega dados de 3 endpoints ao mesmo tempo
+// forkJoin - Espera TODOS completarem (como Promise.all)
+// Use: Múltiplos HTTP paralelos (HTTP completa automaticamente)
 forkJoin({
   users: this.http.get<User[]>('/api/users'),
   posts: this.http.get<Post[]>('/api/posts'),
-  comments: this.http.get<Comment[]>('/api/comments')
-}).subscribe(({ users, posts, comments }) => {
+  config: this.http.get<Config>('/api/config')
+}).subscribe(({ users, posts, config }) => {
   // Só executa quando TODOS terminarem
-  console.log(users, posts, comments);
 });
+
+// withLatestFrom - Combina com ÚLTIMO valor do outro
+// Use: Pegar contexto no momento de uma ação
+this.saveButton$.pipe(
+  withLatestFrom(this.form.valueChanges, this.currentUser$),
+  map(([click, formValue, user]) => ({ ...formValue, updatedBy: user.id })),
+  switchMap(data => this.api.save(data))
+);
+
+// zip - Combina por INDEX (1º com 1º, 2º com 2º...)
+// Use: Sincronizar streams par a par
+zip(
+  this.http.get('/api/questions'),
+  this.http.get('/api/answers')
+).pipe(
+  map(([questions, answers]) => this.merge(questions, answers))
+);
+```
+
+### 5.7 Error Handling Patterns
+
+```typescript
+// 1. catchError com fallback
+this.http.get('/api/users').pipe(
+  catchError(err => {
+    console.error(err);
+    return of([]); // Valor padrão
+  })
+);
+
+// 2. retry simples
+this.http.get('/api/users').pipe(
+  retry(3), // Tenta 3x antes de emitir erro
+  catchError(err => of([]))
+);
+
+// 3. retry com delay exponencial (produção!)
+this.http.get('/api/users').pipe(
+  retry({
+    count: 3,
+    delay: (error, retryCount) => {
+      const delayMs = Math.pow(2, retryCount) * 1000; // 1s, 2s, 4s
+      console.log(`Retry ${retryCount} em ${delayMs}ms`);
+      return timer(delayMs);
+    }
+  }),
+  catchError(err => {
+    this.notificationService.showError('Falha após 3 tentativas');
+    return EMPTY;
+  })
+);
+
+// 4. catchError que re-emite (não mata o Observable)
+this.searchControl.valueChanges.pipe(
+  switchMap(term =>
+    this.api.search(term).pipe(
+      catchError(() => of([]))  // ← Dentro do switchMap!
+    )
+  )
+  // Se catchError fosse fora, mataria o stream de valueChanges
+);
+```
+
+### 5.8 Custom Operators
+
+```typescript
+// Operator customizado reutilizável
+function retryWithBackoff<T>(maxRetries: number, delayMs: number) {
+  return (source: Observable<T>) => source.pipe(
+    retry({
+      count: maxRetries,
+      delay: (_, retryCount) => timer(delayMs * Math.pow(2, retryCount - 1))
+    })
+  );
+}
+
+// Uso
+this.http.get('/api/data').pipe(
+  retryWithBackoff(3, 1000)
+);
+
+// Outro: indicador de loading
+function withLoading<T>(loading$: BehaviorSubject<boolean>) {
+  return (source: Observable<T>) => source.pipe(
+    tap(() => loading$.next(true)),
+    finalize(() => loading$.next(false))
+  );
+}
 ```
 
 ---
@@ -602,6 +1250,8 @@ forkJoin({
 <div>{{ today | date }}</div>                    <!-- Dec 25, 2024 -->
 <div>{{ today | date:'dd/MM/yyyy' }}</div>       <!-- 25/12/2024 -->
 <div>{{ today | date:'short' }}</div>            <!-- 12/25/24, 3:15 PM -->
+<div>{{ today | date:'fullDate' }}</div>         <!-- Wednesday, December 25, 2024 -->
+<div>{{ today | date:'HH:mm:ss' }}</div>         <!-- 15:30:45 -->
 
 <!-- Currency -->
 <div>{{ price | currency }}</div>                <!-- $100.00 -->
@@ -611,26 +1261,40 @@ forkJoin({
 <!-- Number/Decimal -->
 <div>{{ 3.14159 | number:'1.2-4' }}</div>        <!-- 3.1416 -->
 <!--                      ↑ ↑   ↑
-                    min . min-max decimais -->
+          mínimo dígitos inteiros . mín-máx decimais -->
+<div>{{ 1000000 | number:'1.0-0' }}</div>        <!-- 1,000,000 -->
 
 <!-- Percent -->
-<div>{{ 0.25 | percent }}</div>                  <!-- 25% -->
+<div>{{ 0.256 | percent }}</div>                 <!-- 26% -->
+<div>{{ 0.256 | percent:'1.1-2' }}</div>         <!-- 25.6% -->
 
 <!-- Async (IMPORTANTE - unsubscribe automático) -->
 <div *ngIf="user$ | async as user">
   {{ user.name }}
 </div>
+<!-- Combinar pipes -->
+<div>{{ (price$ | async) | currency:'BRL' }}</div>
 
 <!-- JSON (debug) -->
-<pre>{{ user | json }}</pre>
+<pre>{{ complexObject | json }}</pre>
 
 <!-- Uppercase/Lowercase/Titlecase -->
 <div>{{ 'hello' | uppercase }}</div>             <!-- HELLO -->
 <div>{{ 'WORLD' | lowercase }}</div>             <!-- world -->
 <div>{{ 'hello world' | titlecase }}</div>       <!-- Hello World -->
 
-<!-- Slice -->
+<!-- Slice (arrays e strings) -->
 <div>{{ [1,2,3,4,5] | slice:1:3 }}</div>         <!-- [2,3] -->
+<div>{{ 'Angular' | slice:0:3 }}</div>           <!-- Ang -->
+
+<!-- KeyValue (iterar objects) -->
+<div *ngFor="let item of map | keyvalue">
+  {{ item.key }}: {{ item.value }}
+</div>
+
+<!-- I18nPlural / I18nSelect -->
+<div>{{ messages.length }} {{ messages.length | i18nPlural: pluralMap }}</div>
+<!-- pluralMap = { '=0': 'mensagens', '=1': 'mensagem', 'other': 'mensagens' } -->
 ```
 
 ### 6.2 Pipe Customizado
@@ -644,60 +1308,100 @@ import { Pipe, PipeTransform } from '@angular/core';
 })
 export class HighlightPipe implements PipeTransform {
   transform(text: string, search: string): string {
-    if (!search) return text;
+    if (!search || !text) return text;
     
-    const regex = new RegExp(search, 'gi');
-    return text.replace(regex, match => `<mark>${match}</mark>`);
+    const regex = new RegExp(`(${this.escapeRegex(search)})`, 'gi');
+    return text.replace(regex, '<mark>$1</mark>');
+  }
+  
+  private escapeRegex(str: string): string {
+    return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   }
 }
 ```
 
 ```html
-<!-- Uso -->
 <div [innerHTML]="'Angular é incrível' | highlight:'Angular'"></div>
 <!-- Resultado: <mark>Angular</mark> é incrível -->
 ```
 
 ### 6.3 Pure vs Impure Pipes
 
+| Aspecto | Pure (default) | Impure |
+|---------|---------------|--------|
+| **Recalcula** | Quando input muda (referência) | A CADA change detection |
+| **Performance** | Excelente | Péssima |
+| **Array mutation** | NÃO detecta `.push()` | Detecta |
+| **Uso** | 99% dos casos | Quase nunca |
+
 ```typescript
-// Pure (default) - só recalcula se inputs mudarem
-@Pipe({ name: 'myPipe', pure: true })
-export class MyPipe implements PipeTransform {
-  transform(value: any, arg: string): any {
-    console.log('Executou!');  // Executa poucas vezes
-    return value;
+// Pure (default) - só recalcula se referência do input mudar
+@Pipe({ name: 'filterUsers', pure: true })
+export class FilterUsersPipe implements PipeTransform {
+  transform(users: User[], searchTerm: string): User[] {
+    if (!searchTerm) return users;
+    return users.filter(u => u.name.includes(searchTerm));
   }
 }
 
-// Impure - recalcula a CADA change detection
-@Pipe({ name: 'myPipe', pure: false })
-export class MyPipe implements PipeTransform {
-  transform(value: any, arg: string): any {
-    console.log('Executou!');  // Executa 100x por segundo!
-    return value;
-  }
-}
+// ⚠️ Com pure pipe: users.push(newUser) NÃO dispara recalcular
+// ✅ Precisa: users = [...users, newUser] (nova referência)
 ```
 
-**Quando usar impure?** Quase nunca. Só se o pipe depende de estado externo mutável.
+**Quando usar impure?** Quase nunca. Melhor forçar imutabilidade.
 
-### 6.4 Pipe com Parâmetros
+### 6.4 Pipes Úteis para Projetos
 
 ```typescript
+// Tempo relativo ("há 5 minutos")
+@Pipe({ name: 'timeAgo', pure: true })
+export class TimeAgoPipe implements PipeTransform {
+  transform(date: Date | string): string {
+    const now = new Date();
+    const past = new Date(date);
+    const diffMs = now.getTime() - past.getTime();
+    const diffSec = Math.floor(diffMs / 1000);
+    const diffMin = Math.floor(diffSec / 60);
+    const diffHour = Math.floor(diffMin / 60);
+    const diffDay = Math.floor(diffHour / 24);
+    
+    if (diffSec < 60) return 'agora mesmo';
+    if (diffMin < 60) return `há ${diffMin} min`;
+    if (diffHour < 24) return `há ${diffHour}h`;
+    if (diffDay < 30) return `há ${diffDay} dias`;
+    return past.toLocaleDateString('pt-BR');
+  }
+}
+
+// Truncate com "..."
 @Pipe({ name: 'truncate' })
 export class TruncatePipe implements PipeTransform {
   transform(value: string, limit = 50, ellipsis = '...'): string {
-    if (value.length <= limit) return value;
-    return value.substring(0, limit) + ellipsis;
+    if (!value || value.length <= limit) return value;
+    return value.substring(0, limit).trimEnd() + ellipsis;
   }
 }
-```
 
-```html
-<div>{{ longText | truncate }}</div>              <!-- Limite default 50 -->
-<div>{{ longText | truncate:100 }}</div>          <!-- Limite 100 -->
-<div>{{ longText | truncate:50:'---' }}</div>     <!-- Ellipsis customizado -->
+// Safe URL (bypass sanitizer para iframes/vídeos)
+@Pipe({ name: 'safeUrl' })
+export class SafeUrlPipe implements PipeTransform {
+  constructor(private sanitizer: DomSanitizer) {}
+  
+  transform(url: string): SafeResourceUrl {
+    return this.sanitizer.bypassSecurityTrustResourceUrl(url);
+  }
+}
+
+// Bytes para human readable
+@Pipe({ name: 'fileSize' })
+export class FileSizePipe implements PipeTransform {
+  transform(bytes: number): string {
+    if (bytes === 0) return '0 B';
+    const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(1024));
+    return `${(bytes / Math.pow(1024, i)).toFixed(1)} ${units[i]}`;
+  }
+}
 ```
 
 ---
@@ -708,30 +1412,41 @@ export class TruncatePipe implements PipeTransform {
 ### 7.1 Attribute Directive
 
 ```typescript
-import { Directive, ElementRef, HostListener, Input } from '@angular/core';
+import { Directive, ElementRef, HostListener, Input, Renderer2 } from '@angular/core';
 
 @Directive({
   selector: '[appHighlight]'
 })
 export class HighlightDirective {
-  @Input() appHighlight = 'yellow';  // Cor customizável
+  @Input() appHighlight = 'yellow';
+  @Input() hoverColor = '';
   
-  constructor(private el: ElementRef) {}
+  private originalColor = '';
+  
+  // ✅ Usar Renderer2 ao invés de ElementRef direto (segurança SSR)
+  constructor(
+    private el: ElementRef,
+    private renderer: Renderer2
+  ) {}
   
   @HostListener('mouseenter') onMouseEnter() {
-    this.el.nativeElement.style.backgroundColor = this.appHighlight;
+    this.originalColor = this.el.nativeElement.style.backgroundColor;
+    this.setColor(this.hoverColor || this.appHighlight);
   }
   
   @HostListener('mouseleave') onMouseLeave() {
-    this.el.nativeElement.style.backgroundColor = '';
+    this.setColor(this.originalColor);
+  }
+  
+  private setColor(color: string) {
+    this.renderer.setStyle(this.el.nativeElement, 'backgroundColor', color);
   }
 }
 ```
 
 ```html
-<!-- Uso -->
-<div appHighlight>Hover aqui</div>
-<div [appHighlight]="'red'">Vermelho no hover</div>
+<div appHighlight>Hover amarelo (default)</div>
+<div [appHighlight]="'lightblue'" [hoverColor]="'blue'">Hover azul</div>
 ```
 
 ### 7.2 Structural Directive
@@ -740,14 +1455,18 @@ export class HighlightDirective {
 import { Directive, Input, TemplateRef, ViewContainerRef } from '@angular/core';
 
 @Directive({
-  selector: '[appUnless]'  // Inverso do *ngIf
+  selector: '[appUnless]'
 })
 export class UnlessDirective {
+  private hasView = false;
+  
   @Input() set appUnless(condition: boolean) {
-    if (!condition) {
+    if (!condition && !this.hasView) {
       this.viewContainer.createEmbeddedView(this.templateRef);
-    } else {
+      this.hasView = true;
+    } else if (condition && this.hasView) {
       this.viewContainer.clear();
+      this.hasView = false;
     }
   }
   
@@ -758,11 +1477,110 @@ export class UnlessDirective {
 }
 ```
 
-```html
-<!-- Uso -->
-<div *appUnless="isLoggedIn">
-  Faça login para continuar
-</div>
+### 7.3 Directives Úteis para Projetos
+
+```typescript
+// Permission Directive - Mostrar/esconder baseado em permissão
+@Directive({ selector: '[appHasPermission]' })
+export class HasPermissionDirective implements OnInit {
+  @Input('appHasPermission') permission!: string;
+  
+  private hasView = false;
+  
+  constructor(
+    private templateRef: TemplateRef<any>,
+    private viewContainer: ViewContainerRef,
+    private authService: AuthService
+  ) {}
+  
+  ngOnInit() {
+    if (this.authService.hasPermission(this.permission) && !this.hasView) {
+      this.viewContainer.createEmbeddedView(this.templateRef);
+      this.hasView = true;
+    } else if (!this.authService.hasPermission(this.permission) && this.hasView) {
+      this.viewContainer.clear();
+      this.hasView = false;
+    }
+  }
+}
+// Uso: <button *appHasPermission="'admin:delete'">Deletar</button>
+
+// Auto-focus Directive
+@Directive({ selector: '[appAutoFocus]' })
+export class AutoFocusDirective implements AfterViewInit {
+  constructor(private el: ElementRef) {}
+  
+  ngAfterViewInit() {
+    setTimeout(() => this.el.nativeElement.focus());
+  }
+}
+
+// Click Outside Directive (fechar dropdown)
+@Directive({ selector: '[appClickOutside]' })
+export class ClickOutsideDirective {
+  @Output() appClickOutside = new EventEmitter<void>();
+  
+  constructor(private el: ElementRef) {}
+  
+  @HostListener('document:click', ['$event.target'])
+  onClick(target: HTMLElement) {
+    if (!this.el.nativeElement.contains(target)) {
+      this.appClickOutside.emit();
+    }
+  }
+}
+// Uso: <div appClickOutside (appClickOutside)="closeDropdown()">
+
+// Debounce Click (previne double click)
+@Directive({ selector: '[appDebounceClick]' })
+export class DebounceClickDirective implements OnInit, OnDestroy {
+  @Input() debounceTime = 500;
+  @Output() debounceClick = new EventEmitter<MouseEvent>();
+  
+  private clicks$ = new Subject<MouseEvent>();
+  private destroy$ = new Subject<void>();
+  
+  ngOnInit() {
+    this.clicks$.pipe(
+      debounceTime(this.debounceTime),
+      takeUntil(this.destroy$)
+    ).subscribe(event => this.debounceClick.emit(event));
+  }
+  
+  @HostListener('click', ['$event'])
+  onClick(event: MouseEvent) {
+    event.preventDefault();
+    event.stopPropagation();
+    this.clicks$.next(event);
+  }
+  
+  ngOnDestroy() {
+    this.destroy$.next();
+    this.destroy$.complete();
+  }
+}
+// Uso: <button appDebounceClick (debounceClick)="save()">Salvar</button>
+```
+
+### 7.4 Directive Composition API (Angular 15+)
+
+```typescript
+// Compor diretivas em um component
+@Component({
+  selector: 'app-button',
+  hostDirectives: [
+    { directive: TooltipDirective, inputs: ['tooltipText'] },
+    { directive: RippleDirective },
+    { directive: TrackClickDirective, outputs: ['tracked'] }
+  ],
+  template: `<ng-content></ng-content>`
+})
+export class ButtonComponent {}
+
+// Uso: o component herda todos os inputs/outputs das directives
+<app-button tooltipText="Clique aqui" (tracked)="onTrack($event)">
+  Salvar
+</app-button>
 ```
 
 ---
@@ -770,7 +1588,18 @@ export class UnlessDirective {
 <a name="8-forms"></a>
 ## 8. FORMS (REACTIVE & TEMPLATE-DRIVEN)
 
-### 8.1 Template-Driven (Simples)
+### 8.1 Template-Driven vs Reactive
+
+| Aspecto | Template-Driven | Reactive |
+|---------|----------------|----------|
+| **Setup** | Simples (ngModel) | Mais código |
+| **Lógica** | No template | No component (TypeScript) |
+| **Testabilidade** | Difícil | Fácil |
+| **Validação** | Directives | Funções |
+| **Dinâmico** | Limitado | Total controle |
+| **Recomendado** | Forms simples | Senior, apps complexas |
+
+### 8.2 Template-Driven (Simples)
 
 ```typescript
 export class LoginComponent {
@@ -786,132 +1615,235 @@ export class LoginComponent {
 
 ```html
 <form #loginForm="ngForm" (ngSubmit)="onSubmit(loginForm)">
-  <input name="email" [(ngModel)]="user.email" required email>
+  <input name="email" [(ngModel)]="user.email" required email #emailField="ngModel">
+  <div *ngIf="emailField.invalid && emailField.touched" class="error">
+    Email inválido
+  </div>
+  
   <input name="password" [(ngModel)]="user.password" required minlength="6">
   
   <button [disabled]="!loginForm.valid">Login</button>
+  
+  <!-- Debug -->
+  <pre>Valid: {{ loginForm.valid }}</pre>
+  <pre>Values: {{ loginForm.value | json }}</pre>
 </form>
 ```
 
-### 8.2 Reactive Forms (Recomendado Senior)
+### 8.3 Reactive Forms (Recomendado para Senior)
 
 ```typescript
-export class LoginComponent implements OnInit {
-  loginForm!: FormGroup;
+export class RegistrationComponent implements OnInit {
+  registrationForm!: FormGroup;
   
   constructor(private fb: FormBuilder) {}
   
   ngOnInit() {
-    this.loginForm = this.fb.group({
+    this.registrationForm = this.fb.group({
+      // [valor_inicial, [validators_síncronos], [validators_assíncronos]]
+      name: ['', [Validators.required, Validators.minLength(3)]],
       email: ['', [Validators.required, Validators.email]],
-      password: ['', [Validators.required, Validators.minLength(6)]]
+      password: ['', [Validators.required, Validators.minLength(8), this.strongPassword]],
+      confirmPassword: ['', Validators.required],
+      
+      // FormGroup aninhado
+      address: this.fb.group({
+        street: [''],
+        city: ['', Validators.required],
+        state: ['', Validators.required],
+        zip: ['', [Validators.required, Validators.pattern(/^\d{5}-\d{3}$/)]],
+      }),
+      
+      // FormArray
+      phones: this.fb.array([]),
+      
+      // Checkbox
+      acceptTerms: [false, Validators.requiredTrue],
+    }, {
+      validators: [this.passwordMatchValidator]  // Cross-field validation
     });
     
     // Reagir a mudanças
-    this.loginForm.valueChanges.subscribe(values => {
-      console.log(values);
+    this.registrationForm.get('state')?.valueChanges.pipe(
+      distinctUntilChanged()
+    ).subscribe(state => {
+      this.loadCities(state);
     });
   }
   
+  // Getters para template limpo
+  get name() { return this.registrationForm.get('name'); }
+  get email() { return this.registrationForm.get('email'); }
+  get password() { return this.registrationForm.get('password'); }
+  get address() { return this.registrationForm.get('address') as FormGroup; }
+  get phones() { return this.registrationForm.get('phones') as FormArray; }
+  
+  // Validador customizado inline
+  strongPassword(control: AbstractControl): ValidationErrors | null {
+    const value = control.value;
+    const hasUpper = /[A-Z]/.test(value);
+    const hasLower = /[a-z]/.test(value);
+    const hasNumber = /\d/.test(value);
+    const hasSpecial = /[!@#$%^&*]/.test(value);
+    
+    const valid = hasUpper && hasLower && hasNumber && hasSpecial;
+    return valid ? null : { weakPassword: true };
+  }
+  
+  // Cross-field
+  passwordMatchValidator(group: AbstractControl): ValidationErrors | null {
+    const pass = group.get('password')?.value;
+    const confirm = group.get('confirmPassword')?.value;
+    return pass === confirm ? null : { passwordMismatch: true };
+  }
+  
   onSubmit() {
-    if (this.loginForm.valid) {
-      console.log(this.loginForm.value);
+    if (this.registrationForm.valid) {
+      console.log(this.registrationForm.value);
+      // OU getRawValue() para incluir campos disabled
+    } else {
+      this.markAllAsTouched();
     }
   }
   
-  // Getters para facilitar no template
-  get email() { return this.loginForm.get('email'); }
-  get password() { return this.loginForm.get('password'); }
+  private markAllAsTouched() {
+    this.registrationForm.markAllAsTouched();
+  }
 }
 ```
 
 ```html
-<form [formGroup]="loginForm" (ngSubmit)="onSubmit()">
-  <input formControlName="email">
-  <div *ngIf="email?.invalid && email?.touched">
-    <div *ngIf="email?.errors?.['required']">Email obrigatório</div>
-    <div *ngIf="email?.errors?.['email']">Email inválido</div>
+<form [formGroup]="registrationForm" (ngSubmit)="onSubmit()">
+  <!-- Name -->
+  <input formControlName="name" placeholder="Nome">
+  <div *ngIf="name?.invalid && name?.touched">
+    <small *ngIf="name?.errors?.['required']">Nome obrigatório</small>
+    <small *ngIf="name?.errors?.['minlength']">
+      Mínimo {{ name?.errors?.['minlength'].requiredLength }} caracteres
+    </small>
   </div>
   
+  <!-- Email -->
+  <input formControlName="email" placeholder="Email">
+  
+  <!-- Password -->
   <input formControlName="password" type="password">
   <div *ngIf="password?.invalid && password?.touched">
-    <div *ngIf="password?.errors?.['required']">Senha obrigatória</div>
-    <div *ngIf="password?.errors?.['minlength']">
-      Mínimo {{ password?.errors?.['minlength'].requiredLength }} caracteres
-    </div>
+    <small *ngIf="password?.errors?.['weakPassword']">
+      Senha precisa de maiúscula, minúscula, número e caractere especial
+    </small>
   </div>
   
-  <button [disabled]="loginForm.invalid">Login</button>
+  <!-- Confirm Password -->
+  <input formControlName="confirmPassword" type="password">
+  <div *ngIf="registrationForm.errors?.['passwordMismatch'] && password?.touched">
+    <small>Senhas não conferem</small>
+  </div>
+  
+  <!-- Address (FormGroup aninhado) -->
+  <div formGroupName="address">
+    <input formControlName="street" placeholder="Rua">
+    <input formControlName="city" placeholder="Cidade">
+    <input formControlName="state" placeholder="Estado">
+    <input formControlName="zip" placeholder="CEP">
+  </div>
+  
+  <!-- Phones (FormArray) -->
+  <div formArrayName="phones">
+    <div *ngFor="let phone of phones.controls; let i = index">
+      <input [formControlName]="i" placeholder="Telefone">
+      <button type="button" (click)="removePhone(i)">X</button>
+    </div>
+  </div>
+  <button type="button" (click)="addPhone()">+ Telefone</button>
+  
+  <label>
+    <input formControlName="acceptTerms" type="checkbox">
+    Aceito os termos
+  </label>
+  
+  <button [disabled]="registrationForm.invalid">Registrar</button>
 </form>
 ```
 
-### 8.3 FormArray (Arrays Dinâmicos)
+### 8.4 FormArray (Arrays Dinâmicos)
 
 ```typescript
-export class PhoneListComponent implements OnInit {
+export class SkillsComponent implements OnInit {
   form!: FormGroup;
   
   constructor(private fb: FormBuilder) {}
   
   ngOnInit() {
     this.form = this.fb.group({
-      phones: this.fb.array([this.createPhone()])
+      skills: this.fb.array([], [Validators.minLength(1)])
     });
   }
   
-  get phones() {
-    return this.form.get('phones') as FormArray;
+  get skills(): FormArray {
+    return this.form.get('skills') as FormArray;
   }
   
-  createPhone(): FormControl {
-    return this.fb.control('', Validators.required);
+  addSkill() {
+    const skillGroup = this.fb.group({
+      name: ['', Validators.required],
+      level: ['beginner', Validators.required],
+      years: [0, [Validators.required, Validators.min(0)]]
+    });
+    this.skills.push(skillGroup);
   }
   
-  addPhone() {
-    this.phones.push(this.createPhone());
+  removeSkill(index: number) {
+    this.skills.removeAt(index);
   }
   
-  removePhone(index: number) {
-    this.phones.removeAt(index);
+  moveSkillUp(index: number) {
+    if (index <= 0) return;
+    const current = this.skills.at(index);
+    this.skills.removeAt(index);
+    this.skills.insert(index - 1, current);
   }
 }
 ```
 
-```html
-<form [formGroup]="form">
-  <div formArrayName="phones">
-    <div *ngFor="let phone of phones.controls; let i = index">
-      <input [formControlName]="i">
-      <button (click)="removePhone(i)">Remover</button>
-    </div>
-  </div>
-  <button (click)="addPhone()">Adicionar Telefone</button>
-</form>
-```
-
-### 8.4 Validação Customizada
+### 8.5 Validação Customizada
 
 ```typescript
-// Validador síncrono
+// Validador síncrono reutilizável
 export function cpfValidator(): ValidatorFn {
   return (control: AbstractControl): ValidationErrors | null => {
-    const cpf = control.value;
+    const cpf = control.value?.replace(/\D/g, '');
     if (!cpf) return null;
+    if (cpf.length !== 11) return { cpfInvalido: { message: 'CPF deve ter 11 dígitos' } };
     
-    const isValid = validaCPF(cpf);
-    return isValid ? null : { cpfInvalido: true };
+    // Validação dos dígitos
+    const isValid = validateCPFDigits(cpf);
+    return isValid ? null : { cpfInvalido: { message: 'CPF inválido' } };
   };
 }
 
-// Validador assíncrono (ex: checar se email existe)
+// Validador assíncrono (checa no servidor)
 export function emailExistsValidator(userService: UserService): AsyncValidatorFn {
   return (control: AbstractControl): Observable<ValidationErrors | null> => {
     if (!control.value) return of(null);
     
-    return userService.checkEmail(control.value).pipe(
+    return timer(500).pipe(  // Debounce de 500ms
+      switchMap(() => userService.checkEmail(control.value)),
       map(exists => exists ? { emailJaExiste: true } : null),
       catchError(() => of(null))
     );
+  };
+}
+
+// Validador parametrizado
+export function rangeValidator(min: number, max: number): ValidatorFn {
+  return (control: AbstractControl): ValidationErrors | null => {
+    const value = control.value;
+    if (value === null || value === undefined) return null;
+    if (value < min || value > max) {
+      return { range: { min, max, actual: value } };
+    }
+    return null;
   };
 }
 ```
@@ -921,30 +1853,50 @@ export function emailExistsValidator(userService: UserService): AsyncValidatorFn
 this.form = this.fb.group({
   cpf: ['', [Validators.required, cpfValidator()]],
   email: ['', 
-    [Validators.required, Validators.email],
-    [emailExistsValidator(this.userService)]  // Async
-  ]
+    [Validators.required, Validators.email],       // Sync
+    [emailExistsValidator(this.userService)]         // Async
+  ],
+  age: [0, [Validators.required, rangeValidator(18, 120)]]
 });
 ```
 
-### 8.5 Cross-Field Validation
+### 8.6 Dynamic Forms (avançado)
 
 ```typescript
-export function passwordMatchValidator(): ValidatorFn {
-  return (formGroup: AbstractControl): ValidationErrors | null => {
-    const password = formGroup.get('password')?.value;
-    const confirm = formGroup.get('confirmPassword')?.value;
-    
-    return password === confirm ? null : { passwordMismatch: true };
-  };
+// Gerar formulário dinamicamente a partir de config
+interface FieldConfig {
+  key: string;
+  label: string;
+  type: 'text' | 'email' | 'number' | 'select' | 'checkbox';
+  validators?: ValidatorFn[];
+  options?: { value: any; label: string }[]; // Para select
 }
-```
 
-```typescript
-this.form = this.fb.group({
-  password: ['', Validators.required],
-  confirmPassword: ['', Validators.required]
-}, { validators: passwordMatchValidator() });  // No FormGroup
+@Component({ ... })
+export class DynamicFormComponent implements OnInit {
+  @Input() fields: FieldConfig[] = [];
+  @Output() formSubmit = new EventEmitter<any>();
+  
+  form!: FormGroup;
+  
+  constructor(private fb: FormBuilder) {}
+  
+  ngOnInit() {
+    const group: Record<string, any> = {};
+    
+    this.fields.forEach(field => {
+      group[field.key] = ['', field.validators || []];
+    });
+    
+    this.form = this.fb.group(group);
+  }
+  
+  onSubmit() {
+    if (this.form.valid) {
+      this.formSubmit.emit(this.form.value);
+    }
+  }
+}
 ```
 
 ---
@@ -959,11 +1911,17 @@ const routes: Routes = [
   { path: '', component: HomeComponent },
   { path: 'users', component: UserListComponent },
   { path: 'users/:id', component: UserDetailComponent },
-  { path: '**', component: NotFoundComponent }  // 404
+  { path: 'users/:id/edit', component: UserEditComponent },
+  { path: '**', component: NotFoundComponent }  // 404 - SEMPRE último
 ];
 
 @NgModule({
-  imports: [RouterModule.forRoot(routes)],
+  imports: [RouterModule.forRoot(routes, {
+    scrollPositionRestoration: 'enabled',   // Scroll to top ao navegar
+    anchorScrolling: 'enabled',             // Scroll para #anchors
+    onSameUrlNavigation: 'reload',          // Permite recarregar mesma rota
+    preloadingStrategy: PreloadAllModules   // Pre-carrega lazy modules
+  })],
   exports: [RouterModule]
 })
 export class AppRoutingModule {}
@@ -973,18 +1931,37 @@ export class AppRoutingModule {}
 
 ```typescript
 const routes: Routes = [
+  // Lazy load de módulo inteiro
   {
     path: 'admin',
     loadChildren: () => import('./admin/admin.module').then(m => m.AdminModule)
-    // ↑ Só carrega quando usuário acessar /admin
+  },
+  
+  // Lazy load de component standalone (Angular 14+)
+  {
+    path: 'dashboard',
+    loadComponent: () => import('./dashboard.component').then(m => m.DashboardComponent)
+  },
+  
+  // Lazy load com preload condicional
+  {
+    path: 'reports',
+    loadChildren: () => import('./reports/reports.module').then(m => m.ReportsModule),
+    data: { preload: true }  // Para custom preloading strategy
   }
 ];
 ```
 
-**Benefícios:**
-- ✅ Bundle inicial menor
-- ✅ Carrega feature só quando necessário
-- ✅ Melhora performance inicial
+**Custom Preloading Strategy:**
+```typescript
+// Pré-carregar apenas módulos marcados
+@Injectable({ providedIn: 'root' })
+export class SelectivePreloadingStrategy implements PreloadingStrategy {
+  preload(route: Route, load: () => Observable<any>): Observable<any> {
+    return route.data?.['preload'] ? load() : of(null);
+  }
+}
+```
 
 ### 9.3 Route Guards
 
@@ -997,89 +1974,220 @@ export class AuthGuard implements CanActivate {
     private router: Router
   ) {}
   
-  canActivate(): boolean {
+  canActivate(
+    route: ActivatedRouteSnapshot,
+    state: RouterStateSnapshot
+  ): boolean | UrlTree {
     if (this.authService.isLoggedIn()) {
+      // Checar roles se necessário
+      const requiredRole = route.data['role'];
+      if (requiredRole && !this.authService.hasRole(requiredRole)) {
+        return this.router.createUrlTree(['/forbidden']);
+      }
       return true;
     }
-    this.router.navigate(['/login']);
-    return false;
+    // Salva URL para redirect após login
+    return this.router.createUrlTree(['/login'], {
+      queryParams: { returnUrl: state.url }
+    });
   }
 }
 
-// CanDeactivate - Previne saída (form não salvo)
-export interface CanComponentDeactivate {
-  canDeactivate: () => boolean | Observable<boolean>;
-}
+// Functional Guard (Angular 15+ - preferido)
+export const authGuard: CanActivateFn = (route, state) => {
+  const authService = inject(AuthService);
+  const router = inject(Router);
+  
+  if (authService.isLoggedIn()) return true;
+  return router.createUrlTree(['/login'], {
+    queryParams: { returnUrl: state.url }
+  });
+};
 
-@Injectable({ providedIn: 'root' })
-export class UnsavedChangesGuard implements CanDeactivate<CanComponentDeactivate> {
-  canDeactivate(component: CanComponentDeactivate): boolean {
-    return component.canDeactivate ? component.canDeactivate() : true;
-  }
-}
+// Role Guard (funcional)
+export const roleGuard: CanActivateFn = (route) => {
+  const authService = inject(AuthService);
+  const requiredRole = route.data['role'] as string;
+  return authService.hasRole(requiredRole) || inject(Router).createUrlTree(['/forbidden']);
+};
+
+// CanDeactivate - Previne saída com form não salvo
+export const unsavedChangesGuard: CanDeactivateFn<{ hasUnsavedChanges: () => boolean }> = 
+  (component) => {
+    if (component.hasUnsavedChanges()) {
+      return confirm('Há alterações não salvas. Deseja sair?');
+    }
+    return true;
+  };
 ```
 
 ```typescript
 // Uso nas rotas
 {
   path: 'admin',
-  component: AdminComponent,
-  canActivate: [AuthGuard],
-  canDeactivate: [UnsavedChangesGuard]
+  canActivate: [authGuard, roleGuard],
+  data: { role: 'admin' },
+  children: [
+    {
+      path: 'users/:id/edit',
+      component: UserEditComponent,
+      canDeactivate: [unsavedChangesGuard]
+    }
+  ]
 }
 ```
 
 ### 9.4 Resolve - Pré-carregar Dados
 
 ```typescript
-@Injectable({ providedIn: 'root' })
-export class UserResolve implements Resolve<User> {
-  constructor(private userService: UserService) {}
+// Functional resolver (Angular 15+)
+export const userResolver: ResolveFn<User> = (route) => {
+  const userService = inject(UserService);
+  const router = inject(Router);
+  const id = Number(route.paramMap.get('id'));
   
-  resolve(route: ActivatedRouteSnapshot): Observable<User> {
-    const id = +route.paramMap.get('id')!;
-    return this.userService.getUser(id);
+  return userService.getUser(id).pipe(
+    catchError(() => {
+      router.navigate(['/not-found']);
+      return EMPTY;
+    })
+  );
+};
+
+// Na rota
+{
+  path: 'users/:id',
+  component: UserDetailComponent,
+  resolve: { user: userResolver }
+}
+
+// No component - dados já carregados!
+export class UserDetailComponent implements OnInit {
+  user!: User;
+  
+  constructor(private route: ActivatedRoute) {}
+  
+  ngOnInit() {
+    // Snapshot (valor estático)
+    this.user = this.route.snapshot.data['user'];
+    
+    // OU Observable (reage se rota mudar)
+    this.route.data.subscribe(data => {
+      this.user = data['user'];
+    });
   }
 }
 ```
 
+### 9.5 Nested Routes e Named Outlets
+
 ```typescript
+// Nested routes (children)
+const routes: Routes = [
+  {
+    path: 'admin',
+    component: AdminLayoutComponent,
+    canActivate: [authGuard],
+    children: [
+      { path: '', redirectTo: 'dashboard', pathMatch: 'full' },
+      { path: 'dashboard', component: DashboardComponent },
+      { path: 'users', component: UsersComponent },
+      { path: 'settings', component: SettingsComponent }
+    ]
+  }
+];
+
+// AdminLayoutComponent template
+<nav>
+  <a routerLink="dashboard" routerLinkActive="active">Dashboard</a>
+  <a routerLink="users" routerLinkActive="active">Users</a>
+</nav>
+<router-outlet></router-outlet>  <!-- Children renderizam aqui -->
+
+// Named outlets (múltiplos outlets)
+<router-outlet></router-outlet>           <!-- Primary -->
+<router-outlet name="sidebar"></router-outlet>  <!-- Named -->
+
 {
-  path: 'users/:id',
-  component: UserDetailComponent,
-  resolve: { user: UserResolve }
+  path: 'users',
+  component: UsersComponent,
+  children: [
+    { path: 'filter', component: FilterComponent, outlet: 'sidebar' }
+  ]
 }
+// URL: /users(sidebar:filter)
 ```
 
-```typescript
-// Component
-ngOnInit() {
-  this.user = this.route.snapshot.data['user'];  // Já disponível!
-}
-```
-
-### 9.5 Parâmetros de Rota
+### 9.6 Parâmetros de Rota
 
 ```typescript
-// Snapshot (valor atual)
+// ===== Leitura de parâmetros =====
+
+// Snapshot (valor atual, não reage a mudanças)
 const id = this.route.snapshot.paramMap.get('id');
+const page = this.route.snapshot.queryParamMap.get('page');
 
-// Observable (reage a mudanças)
-this.route.paramMap.subscribe(params => {
-  const id = params.get('id');
-  this.loadUser(id);
-});
+// Observable (reage quando parâmetro muda na mesma rota)
+this.route.paramMap.pipe(
+  map(params => Number(params.get('id'))),
+  switchMap(id => this.userService.getUser(id))
+).subscribe(user => this.user = user);
 
-// Query params
+// ===== Navegação programática =====
+
+// Navegação simples
+this.router.navigate(['/users', userId]);
+// URL: /users/42
+
+// Com query params
 this.router.navigate(['/users'], {
-  queryParams: { page: 2, sort: 'name' }
+  queryParams: { page: 2, sort: 'name', order: 'asc' }
 });
-// URL: /users?page=2&sort=name
+// URL: /users?page=2&sort=name&order=asc
 
-// Ler query params
-this.route.queryParams.subscribe(params => {
-  const page = params['page'];
+// Preservar query params ao navegar
+this.router.navigate(['/users/42'], {
+  queryParamsHandling: 'preserve'  // Mantém params existentes
+  // OU 'merge' para juntar com novos
 });
+
+// Navegação relativa
+this.router.navigate(['edit'], { relativeTo: this.route });
+// Se estiver em /users/42 → vai para /users/42/edit
+
+// Com fragment
+this.router.navigate(['/docs'], { fragment: 'section-2' });
+// URL: /docs#section-2
+```
+
+### 9.7 Router Events (Monitorar Navegação)
+
+```typescript
+export class AppComponent implements OnInit {
+  loading = false;
+  
+  constructor(private router: Router) {}
+  
+  ngOnInit() {
+    this.router.events.subscribe(event => {
+      if (event instanceof NavigationStart) {
+        this.loading = true;
+      }
+      if (event instanceof NavigationEnd) {
+        this.loading = false;
+        // Analytics
+        this.analytics.trackPageView(event.urlAfterRedirects);
+      }
+      if (event instanceof NavigationError) {
+        this.loading = false;
+        console.error('Navigation error:', event.error);
+      }
+      if (event instanceof NavigationCancel) {
+        this.loading = false;
+      }
+    });
+  }
+}
 ```
 
 ---
@@ -1087,64 +2195,117 @@ this.route.queryParams.subscribe(params => {
 <a name="10-change-detection"></a>
 ## 10. CHANGE DETECTION & OnPush
 
-### 10.1 Estratégias
+### 10.1 Como Change Detection Funciona
 
-| Estratégia | Como Funciona | Performance | Quando Usar |
-|-----------|---------------|-------------|-------------|
-| **Default** | Checa toda árvore a cada evento | Boa | Apps pequenas |
-| **OnPush** | Só checa quando: Input muda (ref), evento interno, async pipe | Excelente | Apps médias/grandes |
+```
+Evento (click, HTTP, timer) → Zone.js intercepta → Angular checa toda árvore de components
+                                                            ↓
+                                    Component A (checado) → Component B (checado) → Component C (checado)
+                                         ↓
+                                    Component D (checado)
+```
 
-### 10.2 Default vs OnPush
+**Zone.js monitora:**
+- Events DOM (click, input, etc)
+- setTimeout, setInterval
+- HTTP requests (XMLHttpRequest, fetch)
+- Promises
+
+### 10.2 Estratégias
+
+| Estratégia | Como Funciona | Performance |
+|-----------|---------------|-------------|
+| **Default** | Checa toda árvore de cima pra baixo a cada evento | O(n) - todas as views |
+| **OnPush** | Só checa quando: (1) @Input muda por referência, (2) evento originado no component, (3) async pipe emite, (4) `markForCheck()` chamado | O(1) - só affected |
+
+### 10.3 OnPush em Detalhes
 
 ```typescript
-// Default - checa TUDO a cada evento
-@Component({
-  changeDetection: ChangeDetectionStrategy.Default
-})
-export class SlowComponent {}
-
-// OnPush - checa só quando necessário
 @Component({
   changeDetection: ChangeDetectionStrategy.OnPush
 })
 export class FastComponent {
   @Input() users!: User[];
   
-  // ❌ NÃO funciona com OnPush
-  addUser(user: User) {
-    this.users.push(user);  // Mesma referência
+  // ===== O que DISPARA change detection com OnPush =====
+  
+  // 1. Nova referência de @Input
+  // No pai: this.users = [...this.users, newUser]  ✅
+  
+  // 2. Evento DOM dentro do component
+  onClick() {
+    // Angular checa este component automaticamente
   }
   
-  // ✅ Funciona com OnPush
+  // 3. Async pipe
+  // <div>{{ data$ | async }}</div>  → marca automaticamente
+  
+  // 4. markForCheck() manual
+  constructor(private cdr: ChangeDetectorRef) {}
+  forceUpdate() {
+    this.cdr.markForCheck();  // Marca este component E ancestors
+  }
+  
+  // ===== O que NÃO dispara =====
+  
+  // ❌ Mutação de array
   addUser(user: User) {
-    this.users = [...this.users, user];  // Nova referência!
+    this.users.push(user);  // Mesma referência, OnPush ignora
+  }
+  
+  // ❌ Mutação de objeto
+  updateUser() {
+    this.users[0].name = 'Novo';  // Não detecta!
+  }
+  
+  // ===== Como fazer CERTO =====
+  
+  // ✅ Nova referência (imutabilidade)
+  addUser(user: User) {
+    this.users = [...this.users, user];
+  }
+  
+  updateUser(index: number, name: string) {
+    this.users = this.users.map((u, i) => 
+      i === index ? { ...u, name } : u
+    );
   }
 }
 ```
 
-### 10.3 OnPush + Async Pipe = Perfeito
+### 10.4 OnPush + Async Pipe = Perfeito
 
 ```typescript
 @Component({
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
-    <div *ngFor="let user of users$ | async">
-      {{ user.name }}
-    </div>
+    @if (loading$ | async) {
+      <app-spinner />
+    }
+    
+    @if (error$ | async; as error) {
+      <app-error [message]="error" />
+    }
+    
+    @for (user of users$ | async; track user.id) {
+      <app-user-card [user]="user" (deleted)="onDelete($event)" />
+    } @empty {
+      <p>Nenhum usuário encontrado.</p>
+    }
   `
 })
 export class UserListComponent {
   users$ = this.userService.getUsers();
+  loading$ = new BehaviorSubject(false);
+  error$ = new BehaviorSubject<string | null>(null);
   
   constructor(private userService: UserService) {}
+  
+  onDelete(id: number) { /* ... */ }
 }
 ```
 
-**Por que funciona?**
-- Async pipe marca component para check quando Observable emite
-- OnPush + async pipe = performance máxima
-
-### 10.4 ChangeDetectorRef - Controle Manual
+### 10.5 ChangeDetectorRef - Controle Manual
 
 ```typescript
 import { ChangeDetectorRef } from '@angular/core';
@@ -1152,15 +2313,50 @@ import { ChangeDetectorRef } from '@angular/core';
 export class MyComponent {
   constructor(private cdr: ChangeDetectorRef) {}
   
-  updateOutsideZone() {
-    setTimeout(() => {
-      this.data = 'Nova';
-      this.cdr.markForCheck();  // Marca para próxima checagem
-    });
+  // markForCheck - marca para próxima checagem (com OnPush)
+  updateFromWebSocket(data: any) {
+    this.data = data;
+    this.cdr.markForCheck();  // "Na próxima CD cycle, cheque este component"
   }
   
-  forceCheck() {
-    this.cdr.detectChanges();  // Força checagem imediata
+  // detectChanges - força checagem imediata
+  updateImmediately() {
+    this.data = 'nova';
+    this.cdr.detectChanges();  // Checa AGORA
+  }
+  
+  // detach/reattach - desconecta completamente
+  pauseUpdates() {
+    this.cdr.detach();  // Para de checar este component
+  }
+  
+  resumeUpdates() {
+    this.cdr.reattach();  // Volta a checar
+    this.cdr.markForCheck();
+  }
+}
+```
+
+### 10.6 Zoneless (Angular 18+ experimental)
+
+```typescript
+// Sem Zone.js - change detection 100% manual via Signals
+bootstrapApplication(AppComponent, {
+  providers: [
+    provideExperimentalZonelessChangeDetection()
+  ]
+});
+
+// Component usando Signals (funciona sem Zone.js)
+@Component({
+  template: `<div>{{ count() }}</div>`
+})
+export class CounterComponent {
+  count = signal(0);
+  
+  increment() {
+    this.count.update(v => v + 1);
+    // Signal notifica Angular automaticamente, sem Zone.js
   }
 }
 ```
@@ -1172,28 +2368,40 @@ export class MyComponent {
 
 ### 11.1 O que são Signals?
 
-Signals são **primitivos reativos** introduzidos no Angular 16. Alternativa aos Observables para gerenciar estado.
+Signals são **primitivos reativos** introduzidos no Angular 16. Alternativa granular aos Observables para gerenciar estado síncrono.
 
 ```typescript
-import { Component, signal, computed } from '@angular/core';
+import { Component, signal, computed, effect } from '@angular/core';
 
 export class CounterComponent {
-  // Signal primitivo
+  // WritableSignal - leitura e escrita
   count = signal(0);
   
-  // Computed (auto-recalcula)
+  // Computed - derivado, auto-recalcula (read-only)
   doubleCount = computed(() => this.count() * 2);
+  isPositive = computed(() => this.count() > 0);
+  
+  // Múltiplos dependências
+  message = computed(() => 
+    `Count: ${this.count()}, Double: ${this.doubleCount()}, Positive: ${this.isPositive()}`
+  );
   
   increment() {
+    // set: substitui valor
     this.count.set(this.count() + 1);
-    // OU
+    
+    // update: baseado no valor atual (preferido)
     this.count.update(value => value + 1);
+  }
+  
+  reset() {
+    this.count.set(0);
   }
 }
 ```
 
 ```html
-<!-- Template -->
+<!-- Template - Note os () para ler -->
 <div>Count: {{ count() }}</div>
 <div>Double: {{ doubleCount() }}</div>
 <button (click)="increment()">+1</button>
@@ -1203,75 +2411,170 @@ export class CounterComponent {
 
 | Feature | Signal | BehaviorSubject |
 |---------|--------|-----------------|
-| **Leitura** | `count()` | `count$ \| async` |
-| **Escrita** | `count.set(5)` | `count$.next(5)` |
+| **Leitura** | `count()` | `count$ \| async` ou `.value` |
+| **Escrita** | `count.set(5)` / `.update()` | `count$.next(5)` |
 | **Performance** | Melhor (granular) | Boa (Zone.js) |
-| **Change Detection** | Só affected components | Árvore inteira |
-| **RxJS Operators** | Não (mas tem interop) | Sim |
+| **Change Detection** | Só components afetados | Subárvore inteira |
+| **Síncrono** | Sempre | `.value` sim, subscribe async |
+| **RxJS Operators** | Não (mas interop) | Sim, todos |
 | **Syntax** | Mais simples | Mais verbosa |
+| **Memory leaks** | Não (auto-cleanup) | Sim (precisa unsubscribe) |
+| **Melhor para** | UI state, derived state | Streams assíncronos, HTTP |
 
 ### 11.3 Signals com Arrays/Objects
 
 ```typescript
 export class TodoComponent {
   todos = signal<Todo[]>([]);
+  filter = signal<'all' | 'active' | 'done'>('all');
+  
+  // Computed derivado
+  filteredTodos = computed(() => {
+    const todos = this.todos();
+    const filter = this.filter();
+    
+    switch (filter) {
+      case 'active': return todos.filter(t => !t.done);
+      case 'done': return todos.filter(t => t.done);
+      default: return todos;
+    }
+  });
+  
+  activeCount = computed(() => this.todos().filter(t => !t.done).length);
   
   addTodo(title: string) {
-    // ❌ ERRADO - mutação não dispara
-    this.todos().push({ id: Date.now(), title });
+    // ❌ ERRADO - mutação não dispara (mesma referência)
+    this.todos().push({ id: Date.now(), title, done: false });
     
     // ✅ CERTO - nova referência
-    this.todos.update(current => [...current, { id: Date.now(), title }]);
+    this.todos.update(current => [
+      ...current, 
+      { id: Date.now(), title, done: false }
+    ]);
+  }
+  
+  toggleTodo(id: number) {
+    this.todos.update(current =>
+      current.map(t => t.id === id ? { ...t, done: !t.done } : t)
+    );
   }
   
   removeTodo(id: number) {
     this.todos.update(current => current.filter(t => t.id !== id));
   }
-  
-  updateTodo(id: number, title: string) {
-    this.todos.update(current =>
-      current.map(t => t.id === id ? { ...t, title } : t)
-    );
-  }
 }
 ```
 
-### 11.4 toSignal / toObservable
+### 11.4 toSignal / toObservable - Interoperabilidade
 
 ```typescript
 import { toSignal, toObservable } from '@angular/core/rxjs-interop';
 
 export class UserComponent {
-  // Observable → Signal
+  // ====== Observable → Signal ======
+  
+  // HTTP (completa automaticamente)
   users = toSignal(this.userService.getUsers(), {
-    initialValue: [] as User[]
+    initialValue: [] as User[]  // Valor enquanto carrega
   });
   
-  // Signal → Observable (para usar RxJS)
+  // Com loading state
+  private usersResource = toSignal(this.userService.getUsers());
+  users = computed(() => this.usersResource() ?? []);
+  loading = computed(() => this.usersResource() === undefined);
+  
+  // ====== Signal → Observable (para usar RxJS) ======
+  
   searchTerm = signal('');
+  
+  // Converte para Observable e aplica operadores RxJS
   results$ = toObservable(this.searchTerm).pipe(
     debounceTime(300),
+    filter(term => term.length >= 2),
+    distinctUntilChanged(),
     switchMap(term => this.searchService.search(term))
   );
+  
+  // E pode converter de volta para Signal!
+  results = toSignal(this.results$, { initialValue: [] });
 }
 ```
 
 ### 11.5 Effect - Side Effects
 
 ```typescript
-import { effect } from '@angular/core';
+import { effect, untracked } from '@angular/core';
 
 export class UserComponent {
   userId = signal(1);
+  theme = signal<'light' | 'dark'>('light');
   
   constructor() {
-    // Roda toda vez que userId muda
+    // Roda automaticamente quando signals que ele LÊ mudam
     effect(() => {
-      console.log('User ID:', this.userId());
-      localStorage.setItem('userId', this.userId().toString());
+      console.log('User ID mudou:', this.userId());
+      // ⚠️ Cuidado: NÃO altere outros signals dentro de effect (loop infinito)
+    });
+    
+    // Effect com cleanup
+    effect((onCleanup) => {
+      const id = this.userId();
+      const interval = setInterval(() => this.pollUser(id), 5000);
+      
+      onCleanup(() => clearInterval(interval));  // Limpa quando effect re-executa
+    });
+    
+    // untracked - ler signal sem criar dependência
+    effect(() => {
+      const id = this.userId();  // Dependência (re-executa quando muda)
+      const theme = untracked(() => this.theme());  // Não é dependência
+      console.log(`User ${id}, theme: ${theme}`);
     });
   }
 }
+```
+
+### 11.6 Signal Inputs (Angular 17.1+)
+
+```typescript
+// Novo: input como Signal (sem decorator)
+import { input, output } from '@angular/core';
+
+export class UserCardComponent {
+  // Signal inputs
+  name = input.required<string>();        // Obrigatório
+  age = input(0);                         // Opcional com default
+  role = input<string>('user');           // Tipado com default
+  
+  // Computed baseado em input
+  displayName = computed(() => `${this.name()} (${this.age()})`);
+  
+  // Signal output
+  deleted = output<number>();
+  
+  onDelete() {
+    this.deleted.emit(42);
+  }
+}
+```
+
+### 11.7 Model Signals (Angular 17.2+ - Two-Way Binding)
+
+```typescript
+import { model } from '@angular/core';
+
+// Filho
+@Component({ selector: 'app-slider' })
+export class SliderComponent {
+  value = model(0);  // Two-way bindable signal
+  
+  increment() {
+    this.value.update(v => v + 1);  // Propaga para pai
+  }
+}
+
+// Pai
+<app-slider [(value)]="myValue" />
 ```
 
 ---
@@ -1285,33 +2588,48 @@ export class UserComponent {
 import { Component } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
+import { RouterModule } from '@angular/router';
 
 @Component({
   selector: 'app-user',
-  standalone: true,  // ← Standalone!
-  imports: [CommonModule, FormsModule],  // Importa aqui
-  template: `...`
+  standalone: true,
+  imports: [
+    CommonModule,       // *ngIf, *ngFor, pipes
+    FormsModule,        // ngModel
+    RouterModule,       // routerLink
+    UserCardComponent,  // Outros standalone components
+    HighlightPipe,      // Standalone pipes
+    TooltipDirective    // Standalone directives
+  ],
+  template: `
+    <div *ngFor="let user of users">
+      <app-user-card [user]="user" />
+    </div>
+  `
 })
 export class UserComponent {}
 ```
 
-**Benefícios:**
-- ✅ Sem NgModule
-- ✅ Tree-shaking melhor
-- ✅ Lazy load direto
-
 ### 12.2 App Standalone (Sem AppModule)
 
 ```typescript
-// main.ts
+// main.ts - Bootstrap sem módulo
 import { bootstrapApplication } from '@angular/platform-browser';
-import { provideRouter } from '@angular/router';
-import { provideHttpClient } from '@angular/common/http';
+import { provideRouter, withComponentInputBinding } from '@angular/router';
+import { provideHttpClient, withInterceptors } from '@angular/common/http';
+import { provideAnimations } from '@angular/platform-browser/animations';
 
 bootstrapApplication(AppComponent, {
   providers: [
-    provideRouter(routes),
-    provideHttpClient(),
+    provideRouter(routes, 
+      withComponentInputBinding(),      // Bind route params para @Input
+      withPreloading(PreloadAllModules)  // Preloading
+    ),
+    provideHttpClient(
+      withInterceptors([authInterceptor, loggingInterceptor])
+    ),
+    provideAnimations(),
+    // Outros providers...
   ]
 });
 ```
@@ -1319,11 +2637,48 @@ bootstrapApplication(AppComponent, {
 ### 12.3 Lazy Load Standalone
 
 ```typescript
-// routes
-{
-  path: 'admin',
-  loadComponent: () => import('./admin.component').then(m => m.AdminComponent)
-}
+const routes: Routes = [
+  // Lazy load de component
+  {
+    path: 'admin',
+    loadComponent: () => import('./admin.component').then(m => m.AdminComponent)
+  },
+  
+  // Lazy load de rotas filhas
+  {
+    path: 'settings',
+    loadChildren: () => import('./settings/settings.routes').then(m => m.SETTINGS_ROUTES)
+  }
+];
+
+// settings.routes.ts
+export const SETTINGS_ROUTES: Routes = [
+  { path: '', component: SettingsLayoutComponent, children: [
+    { path: 'profile', loadComponent: () => import('./profile.component').then(m => m.ProfileComponent) },
+    { path: 'security', loadComponent: () => import('./security.component').then(m => m.SecurityComponent) },
+  ]}
+];
+```
+
+### 12.4 Migração Gradual (NgModule ↔ Standalone)
+
+```typescript
+// Usar standalone component em NgModule
+@NgModule({
+  imports: [
+    StandaloneComponent  // ← Importa direto no imports!
+  ]
+})
+export class LegacyModule {}
+
+// Usar NgModule em standalone component
+@Component({
+  standalone: true,
+  imports: [
+    SharedModule  // ← Pode importar módulos inteiros
+  ]
+})
+export class StandaloneComponent {}
 ```
 
 ---
@@ -1331,75 +2686,182 @@ bootstrapApplication(AppComponent, {
 <a name="13-http"></a>
 ## 13. HTTP & INTERCEPTORS
 
-### 13.1 HttpClient Básico
+### 13.1 HttpClient Completo
 
 ```typescript
 @Injectable({ providedIn: 'root' })
 export class UserService {
+  private apiUrl = `${environment.apiUrl}/users`;
+  
   constructor(private http: HttpClient) {}
   
-  getUsers(): Observable<User[]> {
-    return this.http.get<User[]>('/api/users').pipe(
-      retry(2),
-      catchError(this.handleError)
-    );
+  // GET com tipagem
+  getUsers(params?: { page?: number; limit?: number }): Observable<PaginatedResponse<User>> {
+    let httpParams = new HttpParams();
+    if (params?.page) httpParams = httpParams.set('page', params.page.toString());
+    if (params?.limit) httpParams = httpParams.set('limit', params.limit.toString());
+    
+    return this.http.get<PaginatedResponse<User>>(this.apiUrl, { params: httpParams });
   }
   
-  createUser(user: User): Observable<User> {
-    return this.http.post<User>('/api/users', user);
+  // GET com headers customizados
+  getUser(id: number): Observable<User> {
+    return this.http.get<User>(`${this.apiUrl}/${id}`, {
+      headers: new HttpHeaders({
+        'X-Custom-Header': 'value'
+      })
+    });
   }
   
-  updateUser(id: number, user: User): Observable<User> {
-    return this.http.put<User>(`/api/users/${id}`, user);
+  // POST
+  createUser(user: CreateUserDto): Observable<User> {
+    return this.http.post<User>(this.apiUrl, user);
   }
   
+  // PUT (substituição total)
+  replaceUser(id: number, user: User): Observable<User> {
+    return this.http.put<User>(`${this.apiUrl}/${id}`, user);
+  }
+  
+  // PATCH (atualização parcial)
+  updateUser(id: number, changes: Partial<User>): Observable<User> {
+    return this.http.patch<User>(`${this.apiUrl}/${id}`, changes);
+  }
+  
+  // DELETE
   deleteUser(id: number): Observable<void> {
-    return this.http.delete<void>(`/api/users/${id}`);
+    return this.http.delete<void>(`${this.apiUrl}/${id}`);
+  }
+  
+  // Upload com progress
+  uploadAvatar(userId: number, file: File): Observable<HttpEvent<any>> {
+    const formData = new FormData();
+    formData.append('avatar', file);
+    
+    return this.http.post(`${this.apiUrl}/${userId}/avatar`, formData, {
+      reportProgress: true,
+      observe: 'events'  // Recebe eventos de progresso
+    });
+  }
+  
+  // Download blob
+  downloadReport(id: number): Observable<Blob> {
+    return this.http.get(`${this.apiUrl}/${id}/report`, {
+      responseType: 'blob'
+    });
   }
 }
 ```
 
-### 13.2 HTTP Interceptor
+### 13.2 HTTP Interceptors
 
 ```typescript
+// ===== Class-based Interceptor (legado mas ainda muito usado) =====
+
 @Injectable()
 export class AuthInterceptor implements HttpInterceptor {
+  constructor(private authService: AuthService) {}
+  
   intercept(req: HttpRequest<any>, next: HttpHandler): Observable<HttpEvent<any>> {
-    // Adiciona token
+    const token = this.authService.getToken();
+    
+    // Skip para URLs públicas
+    if (req.url.includes('/public/')) {
+      return next.handle(req);
+    }
+    
     const authReq = req.clone({
-      setHeaders: { Authorization: `Bearer ${this.getToken()}` }
+      setHeaders: { Authorization: `Bearer ${token}` }
     });
     
-    return next.handle(authReq).pipe(
-      retry(2),
-      catchError(error => {
-        if (error.status === 401) {
-          this.router.navigate(['/login']);
-        }
-        return throwError(() => error);
-      })
-    );
-  }
-  
-  private getToken(): string {
-    return localStorage.getItem('token') || '';
+    return next.handle(authReq);
   }
 }
-```
 
-```typescript
-// Registro (AppModule)
+// Registro (NgModule)
 providers: [
-  {
-    provide: HTTP_INTERCEPTORS,
-    useClass: AuthInterceptor,
-    multi: true
-  }
+  { provide: HTTP_INTERCEPTORS, useClass: AuthInterceptor, multi: true },
+  { provide: HTTP_INTERCEPTORS, useClass: LoggingInterceptor, multi: true },
+  // Ordem importa: Auth → Logging → ...
 ]
+
+// ===== Functional Interceptor (Angular 15+ - preferido) =====
+
+export const authInterceptor: HttpInterceptorFn = (req, next) => {
+  const authService = inject(AuthService);
+  const token = authService.getToken();
+  
+  if (req.url.includes('/public/')) {
+    return next(req);
+  }
+  
+  const authReq = req.clone({
+    setHeaders: { Authorization: `Bearer ${token}` }
+  });
+  
+  return next(authReq);
+};
+
+// Error interceptor com retry e refresh token
+export const errorInterceptor: HttpInterceptorFn = (req, next) => {
+  const authService = inject(AuthService);
+  const router = inject(Router);
+  
+  return next(req).pipe(
+    catchError((error: HttpErrorResponse) => {
+      if (error.status === 401) {
+        // Tenta refresh token
+        return authService.refreshToken().pipe(
+          switchMap(newToken => {
+            const retryReq = req.clone({
+              setHeaders: { Authorization: `Bearer ${newToken}` }
+            });
+            return next(retryReq);
+          }),
+          catchError(() => {
+            authService.logout();
+            router.navigate(['/login']);
+            return throwError(() => error);
+          })
+        );
+      }
+      return throwError(() => error);
+    })
+  );
+};
+
+// Loading interceptor
+export const loadingInterceptor: HttpInterceptorFn = (req, next) => {
+  const loadingService = inject(LoadingService);
+  
+  loadingService.show();
+  return next(req).pipe(
+    finalize(() => loadingService.hide())
+  );
+};
+
+// Cache interceptor
+export const cacheInterceptor: HttpInterceptorFn = (req, next) => {
+  const cache = inject(HttpCacheService);
+  
+  // Só cacheia GET
+  if (req.method !== 'GET') return next(req);
+  
+  const cached = cache.get(req.urlWithParams);
+  if (cached) return of(cached);
+  
+  return next(req).pipe(
+    tap(event => {
+      if (event instanceof HttpResponse) {
+        cache.set(req.urlWithParams, event, 60000); // TTL 1min
+      }
+    })
+  );
+};
 
 // Registro (Standalone)
 provideHttpClient(
-  withInterceptors([authInterceptor])
+  withInterceptors([authInterceptor, errorInterceptor, loadingInterceptor, cacheInterceptor])
 )
 ```
 
@@ -1408,38 +2870,19 @@ provideHttpClient(
 <a name="14-testing"></a>
 ## 14. TESTING
 
-### 14.1 Teste de Component
+### 14.1 Pirâmide de Testes
 
-```typescript
-describe('UserListComponent', () => {
-  let component: UserListComponent;
-  let fixture: ComponentFixture<UserListComponent>;
-  let mockService: jasmine.SpyObj<UserService>;
-  
-  beforeEach(() => {
-    mockService = jasmine.createSpyObj('UserService', ['getUsers']);
-    
-    TestBed.configureTestingModule({
-      declarations: [UserListComponent],
-      providers: [{ provide: UserService, useValue: mockService }]
-    });
-    
-    fixture = TestBed.createComponent(UserListComponent);
-    component = fixture.componentInstance;
-  });
-  
-  it('should load users on init', () => {
-    const mockUsers = [{ id: 1, name: 'João' }];
-    mockService.getUsers.and.returnValue(of(mockUsers));
-    
-    fixture.detectChanges();
-    
-    expect(component.users).toEqual(mockUsers);
-  });
-});
+```
+         /\
+        /  \      E2E (Cypress/Playwright) - Poucos, lentos, alto custo
+       /----\
+      /      \    Integration - Médio, testa componentes juntos
+     /--------\
+    /          \  Unit - Muitos, rápidos, baixo custo
+   /____________\
 ```
 
-### 14.2 Teste de Service com HTTP
+### 14.2 Teste de Service
 
 ```typescript
 describe('UserService', () => {
@@ -1457,20 +2900,284 @@ describe('UserService', () => {
   });
   
   afterEach(() => {
-    httpMock.verify();
+    httpMock.verify();  // Garante que não há requests pendentes
   });
   
   it('should fetch users', () => {
-    const mockUsers = [{ id: 1, name: 'João' }];
+    const mockUsers: User[] = [
+      { id: 1, name: 'João', email: 'joao@test.com' }
+    ];
     
     service.getUsers().subscribe(users => {
-      expect(users).toEqual(mockUsers);
+      expect(users.length).toBe(1);
+      expect(users[0].name).toBe('João');
     });
     
     const req = httpMock.expectOne('/api/users');
     expect(req.request.method).toBe('GET');
-    req.flush(mockUsers);
+    req.flush(mockUsers);  // Simula resposta
   });
+  
+  it('should handle error', () => {
+    service.getUsers().subscribe({
+      error: err => {
+        expect(err.message).toContain('Erro');
+      }
+    });
+    
+    const req = httpMock.expectOne('/api/users');
+    req.flush('Error', { status: 500, statusText: 'Server Error' });
+  });
+  
+  it('should create user with correct body', () => {
+    const newUser = { name: 'Maria', email: 'maria@test.com' };
+    
+    service.createUser(newUser).subscribe();
+    
+    const req = httpMock.expectOne('/api/users');
+    expect(req.request.method).toBe('POST');
+    expect(req.request.body).toEqual(newUser);
+    req.flush({ id: 2, ...newUser });
+  });
+});
+```
+
+### 14.3 Teste de Component
+
+```typescript
+describe('UserListComponent', () => {
+  let component: UserListComponent;
+  let fixture: ComponentFixture<UserListComponent>;
+  let mockUserService: jasmine.SpyObj<UserService>;
+  
+  const mockUsers: User[] = [
+    { id: 1, name: 'João', email: 'joao@test.com' },
+    { id: 2, name: 'Maria', email: 'maria@test.com' }
+  ];
+  
+  beforeEach(async () => {
+    mockUserService = jasmine.createSpyObj('UserService', ['getUsers', 'deleteUser']);
+    mockUserService.getUsers.and.returnValue(of(mockUsers));
+    mockUserService.deleteUser.and.returnValue(of(void 0));
+    
+    await TestBed.configureTestingModule({
+      declarations: [UserListComponent, UserCardComponent],
+      providers: [
+        { provide: UserService, useValue: mockUserService }
+      ]
+    }).compileComponents();
+    
+    fixture = TestBed.createComponent(UserListComponent);
+    component = fixture.componentInstance;
+  });
+  
+  it('should create', () => {
+    expect(component).toBeTruthy();
+  });
+  
+  it('should load users on init', () => {
+    fixture.detectChanges();  // Dispara ngOnInit
+    
+    expect(mockUserService.getUsers).toHaveBeenCalledTimes(1);
+    expect(component.users.length).toBe(2);
+  });
+  
+  it('should render user cards', () => {
+    fixture.detectChanges();
+    
+    const cards = fixture.debugElement.queryAll(By.css('app-user-card'));
+    expect(cards.length).toBe(2);
+  });
+  
+  it('should display user names in the DOM', () => {
+    fixture.detectChanges();
+    
+    const compiled = fixture.nativeElement as HTMLElement;
+    expect(compiled.textContent).toContain('João');
+    expect(compiled.textContent).toContain('Maria');
+  });
+  
+  it('should call deleteUser when card emits delete event', () => {
+    fixture.detectChanges();
+    
+    const card = fixture.debugElement.query(By.directive(UserCardComponent));
+    card.triggerEventHandler('deleted', 1);
+    
+    expect(mockUserService.deleteUser).toHaveBeenCalledWith(1);
+  });
+  
+  it('should show loading spinner while loading', () => {
+    // Antes do subscribe
+    const compiled = fixture.nativeElement as HTMLElement;
+    fixture.detectChanges();
+    
+    // Teste de loading state depende da implementação
+  });
+  
+  it('should show empty state when no users', () => {
+    mockUserService.getUsers.and.returnValue(of([]));
+    fixture.detectChanges();
+    
+    const emptyState = fixture.debugElement.query(By.css('.empty-state'));
+    expect(emptyState).toBeTruthy();
+  });
+});
+```
+
+### 14.4 Teste de Pipe
+
+```typescript
+describe('TruncatePipe', () => {
+  let pipe: TruncatePipe;
+  
+  beforeEach(() => {
+    pipe = new TruncatePipe();
+  });
+  
+  it('should not truncate short text', () => {
+    expect(pipe.transform('Hello')).toBe('Hello');
+  });
+  
+  it('should truncate at default limit', () => {
+    const long = 'a'.repeat(60);
+    const result = pipe.transform(long);
+    expect(result.length).toBe(53);  // 50 + '...'
+    expect(result.endsWith('...')).toBeTrue();
+  });
+  
+  it('should use custom limit', () => {
+    const result = pipe.transform('Hello World', 5);
+    expect(result).toBe('Hello...');
+  });
+  
+  it('should use custom ellipsis', () => {
+    const result = pipe.transform('Hello World', 5, ' →');
+    expect(result).toBe('Hello →');
+  });
+  
+  it('should handle empty string', () => {
+    expect(pipe.transform('')).toBe('');
+  });
+});
+```
+
+### 14.5 Teste de Directive
+
+```typescript
+@Component({
+  template: `<div appHighlight [appHighlight]="color">Test</div>`
+})
+class TestHostComponent {
+  color = 'yellow';
+}
+
+describe('HighlightDirective', () => {
+  let fixture: ComponentFixture<TestHostComponent>;
+  let divEl: DebugElement;
+  
+  beforeEach(() => {
+    TestBed.configureTestingModule({
+      declarations: [HighlightDirective, TestHostComponent]
+    });
+    
+    fixture = TestBed.createComponent(TestHostComponent);
+    divEl = fixture.debugElement.query(By.directive(HighlightDirective));
+    fixture.detectChanges();
+  });
+  
+  it('should highlight on mouseenter', () => {
+    divEl.triggerEventHandler('mouseenter', null);
+    expect(divEl.nativeElement.style.backgroundColor).toBe('yellow');
+  });
+  
+  it('should remove highlight on mouseleave', () => {
+    divEl.triggerEventHandler('mouseenter', null);
+    divEl.triggerEventHandler('mouseleave', null);
+    expect(divEl.nativeElement.style.backgroundColor).toBe('');
+  });
+});
+```
+
+### 14.6 Teste de Guard
+
+```typescript
+describe('authGuard', () => {
+  let authService: jasmine.SpyObj<AuthService>;
+  let router: jasmine.SpyObj<Router>;
+  
+  beforeEach(() => {
+    authService = jasmine.createSpyObj('AuthService', ['isLoggedIn']);
+    router = jasmine.createSpyObj('Router', ['createUrlTree']);
+    
+    TestBed.configureTestingModule({
+      providers: [
+        { provide: AuthService, useValue: authService },
+        { provide: Router, useValue: router }
+      ]
+    });
+  });
+  
+  it('should allow access when logged in', () => {
+    authService.isLoggedIn.and.returnValue(true);
+    
+    const result = TestBed.runInInjectionContext(() => 
+      authGuard({} as any, { url: '/admin' } as any)
+    );
+    
+    expect(result).toBeTrue();
+  });
+  
+  it('should redirect to login when not logged in', () => {
+    authService.isLoggedIn.and.returnValue(false);
+    const urlTree = {} as any;
+    router.createUrlTree.and.returnValue(urlTree);
+    
+    const result = TestBed.runInInjectionContext(() => 
+      authGuard({} as any, { url: '/admin' } as any)
+    );
+    
+    expect(result).toBe(urlTree);
+    expect(router.createUrlTree).toHaveBeenCalledWith(['/login'], jasmine.any(Object));
+  });
+});
+```
+
+### 14.7 Dicas de Testing para Senior
+
+```typescript
+// Padrão: AAA (Arrange, Act, Assert)
+it('should add product to cart', () => {
+  // Arrange
+  const product = { id: 1, name: 'Test', price: 10 };
+  
+  // Act
+  component.addToCart(product);
+  
+  // Assert
+  expect(cartService.add).toHaveBeenCalledWith(product);
+});
+
+// Teste async com fakeAsync
+it('should debounce search', fakeAsync(() => {
+  component.searchControl.setValue('ang');
+  tick(100);  // Ainda no debounce
+  expect(searchService.search).not.toHaveBeenCalled();
+  
+  tick(200);  // 300ms total - debounce passou
+  expect(searchService.search).toHaveBeenCalledWith('ang');
+}));
+
+// Teste com Observable que não completa
+it('should handle real-time updates', () => {
+  const updates$ = new Subject<User>();
+  mockService.onUpdate.and.returnValue(updates$);
+  
+  fixture.detectChanges();
+  
+  updates$.next({ id: 1, name: 'Updated' });
+  fixture.detectChanges();
+  
+  expect(component.user.name).toBe('Updated');
 });
 ```
 
@@ -1479,21 +3186,45 @@ describe('UserService', () => {
 <a name="15-performance"></a>
 ## 15. PERFORMANCE OPTIMIZATION
 
-### 15.1 trackBy (CRÍTICO)
+### 15.1 Checklist de Performance
+
+```
+□ OnPush em todos os components que puder
+□ trackBy em todo *ngFor / track no @for
+□ Lazy loading de módulos/components
+□ Pure pipes ao invés de métodos no template
+□ Virtual scrolling para listas grandes (100+)
+□ Async pipe ao invés de subscribe manual
+□ Preloading strategy para módulos críticos
+□ Bundle analysis (webpack-bundle-analyzer)
+□ Image optimization (NgOptimizedImage)
+□ @defer para components pesados
+□ SSR/Hydration para first paint rápido
+```
+
+### 15.2 Erros de Performance Mais Comuns
 
 ```typescript
-trackByUserId(index: number, user: User): number {
-  return user.id;
+// ❌ RUIM: Método no template (executa a cada change detection!)
+<div *ngFor="let user of filterUsers(users, searchTerm)">
+// Pode executar 100+ vezes por segundo!
+
+// ✅ BOM: Pure pipe (executa só quando inputs mudam)
+<div *ngFor="let user of users | filterUsers:searchTerm">
+
+// ❌ RUIM: Getter complexo com Default change detection
+get filteredUsers() {
+  return this.users.filter(u => u.name.includes(this.term));
+  // Recalcula a CADA change detection cycle
 }
+
+// ✅ BOM: Computed signal OU Observable com combineLatest
+filteredUsers = computed(() => 
+  this.users().filter(u => u.name.includes(this.term()))
+);
 ```
 
-```html
-<div *ngFor="let user of users; trackBy: trackByUserId">
-  {{ user.name }}
-</div>
-```
-
-### 15.2 Virtual Scrolling
+### 15.3 Virtual Scrolling
 
 ```typescript
 import { ScrollingModule } from '@angular/cdk/scrolling';
@@ -1501,30 +3232,133 @@ import { ScrollingModule } from '@angular/cdk/scrolling';
 @Component({
   imports: [ScrollingModule],
   template: `
-    <cdk-virtual-scroll-viewport itemSize="50" class="viewport">
-      <div *cdkVirtualFor="let item of items">{{ item }}</div>
+    <cdk-virtual-scroll-viewport 
+      itemSize="72" 
+      class="viewport"
+      minBufferPx="400"
+      maxBufferPx="800">
+      
+      <div *cdkVirtualFor="let item of items; trackBy: trackById" class="item">
+        <app-user-card [user]="item" />
+      </div>
     </cdk-virtual-scroll-viewport>
+  `,
+  styles: [`
+    .viewport { height: 600px; }
+    .item { height: 72px; }
+  `]
+})
+export class LargeListComponent {
+  items: User[] = [];  // Pode ter 100k items!
+  
+  trackById(index: number, item: User): number {
+    return item.id;
+  }
+}
+```
+
+**Virtual scrolling renderiza apenas os itens visíveis na viewport. Lista de 100k items? Renderiza ~20.**
+
+### 15.4 @defer - Lazy Loading de Components (Angular 17+)
+
+```html
+<!-- Carrega quando entra na viewport -->
+@defer (on viewport) {
+  <app-heavy-chart [data]="chartData" />
+} @placeholder {
+  <div class="skeleton-chart">Carregando gráfico...</div>
+} @loading (minimum 500ms) {
+  <app-spinner />
+} @error {
+  <p>Erro ao carregar gráfico</p>
+}
+
+<!-- Carrega quando idle (após initial render) -->
+@defer (on idle) {
+  <app-recommendations />
+}
+
+<!-- Carrega após interação -->
+@defer (on interaction) {
+  <app-comments [postId]="post.id" />
+} @placeholder {
+  <button>Carregar comentários</button>
+}
+
+<!-- Carrega após delay -->
+@defer (on timer(3s)) {
+  <app-analytics />
+}
+
+<!-- Combinar triggers -->
+@defer (on viewport; on timer(5s)) {
+  <app-footer-content />
+}
+
+<!-- Prefetch (baixa JS antes, renderiza depois) -->
+@defer (on viewport; prefetch on idle) {
+  <app-heavy-widget />
+}
+```
+
+### 15.5 NgOptimizedImage (Angular 15+)
+
+```typescript
+import { NgOptimizedImage } from '@angular/common';
+
+@Component({
+  imports: [NgOptimizedImage],
+  template: `
+    <!-- LCP image (prioritária) -->
+    <img ngSrc="hero.jpg" width="1200" height="600" priority>
+    
+    <!-- Lazy (default) -->
+    <img ngSrc="product.jpg" width="400" height="300">
+    
+    <!-- Fill mode (responsivo) -->
+    <div class="image-container" style="position: relative;">
+      <img ngSrc="background.jpg" fill>
+    </div>
+    
+    <!-- Com loader customizado (CDN) -->
+    <img ngSrc="photo.jpg" width="800" height="600">
   `
 })
 ```
 
-### 15.3 Pure Pipes
+### 15.6 Bundle Analysis
 
-```typescript
-// ❌ RUIM
-<div *ngFor="let user of filterUsers(users, term)">
+```bash
+# Analisar tamanho do bundle
+ng build --stats-json
+npx webpack-bundle-analyzer dist/my-app/stats.json
 
-// ✅ BOM
-@Pipe({ name: 'filterUsers', pure: true })
-<div *ngFor="let user of users | filterUsers:term">
+# Verificar o que está no bundle
+# Procurar:
+# - Bibliotecas grandes sendo importadas inteiras (moment.js, lodash)
+# - Código duplicado
+# - Módulos que deveriam ser lazy
 ```
 
-### 15.4 OnPush Change Detection
+### 15.7 Web Workers
 
 ```typescript
-@Component({
-  changeDetection: ChangeDetectionStrategy.OnPush
-})
+// Processamento pesado fora da thread principal
+if (typeof Worker !== 'undefined') {
+  const worker = new Worker(new URL('./heavy.worker', import.meta.url));
+  
+  worker.postMessage({ data: largeDataset, operation: 'sort' });
+  
+  worker.onmessage = ({ data }) => {
+    this.sortedData = data.result;
+  };
+}
+
+// heavy.worker.ts
+addEventListener('message', ({ data }) => {
+  const result = heavySort(data.data);
+  postMessage({ result });
+});
 ```
 
 ---
@@ -1532,24 +3366,137 @@ import { ScrollingModule } from '@angular/cdk/scrolling';
 <a name="16-content-projection"></a>
 ## 16. CONTENT PROJECTION
 
+### 16.1 Single Slot Projection
+
+```typescript
+// card.component.ts
+@Component({
+  selector: 'app-card',
+  template: `
+    <div class="card">
+      <ng-content></ng-content>  <!-- Tudo que estiver dentro de <app-card> -->
+    </div>
+  `
+})
+export class CardComponent {}
+
+// Uso:
+<app-card>
+  <h2>Título</h2>
+  <p>Conteúdo qualquer</p>
+</app-card>
+```
+
+### 16.2 Multi-Slot Projection (Named Slots)
+
 ```typescript
 @Component({
   selector: 'app-card',
   template: `
-    <div class="header">
-      <ng-content select="[slot='header']"></ng-content>
+    <div class="card">
+      <div class="card-header">
+        <ng-content select="[card-header]"></ng-content>
+      </div>
+      <div class="card-body">
+        <ng-content></ng-content>  <!-- Default slot -->
+      </div>
+      <div class="card-footer">
+        <ng-content select="[card-footer]"></ng-content>
+      </div>
     </div>
-    <div class="body">
-      <ng-content></ng-content>
-    </div>
+  `
+})
+export class CardComponent {}
+
+// Uso:
+<app-card>
+  <div card-header>
+    <h2>Título do Card</h2>
+    <span class="badge">Novo</span>
+  </div>
+  
+  <p>Este conteúdo vai pro slot default (body)</p>
+  <p>Também vai pro body</p>
+  
+  <div card-footer>
+    <button>Cancelar</button>
+    <button>Salvar</button>
+  </div>
+</app-card>
+```
+
+### 16.3 Selectors Avançados
+
+```typescript
+@Component({
+  selector: 'app-layout',
+  template: `
+    <!-- Por atributo -->
+    <ng-content select="[slot='header']"></ng-content>
+    
+    <!-- Por tag de component -->
+    <ng-content select="app-sidebar"></ng-content>
+    
+    <!-- Por classe CSS -->
+    <ng-content select=".main-content"></ng-content>
+    
+    <!-- Por tag HTML -->
+    <ng-content select="footer"></ng-content>
+    
+    <!-- Default (tudo que não combina com nenhum seletor) -->
+    <ng-content></ng-content>
   `
 })
 ```
 
-```html
+### 16.4 Conditional Projection com @ContentChild
+
+```typescript
+@Component({
+  selector: 'app-expandable',
+  template: `
+    <div class="header" (click)="toggle()">
+      <ng-content select="[title]"></ng-content>
+      <span>{{ isExpanded ? '▼' : '▶' }}</span>
+    </div>
+    
+    @if (isExpanded) {
+      <div class="body" @fadeIn>
+        <ng-content select="[body]"></ng-content>
+      </div>
+    }
+    
+    <!-- Mostrar footer só se projetado -->
+    @if (hasFooter) {
+      <div class="footer">
+        <ng-content select="[footer]"></ng-content>
+      </div>
+    }
+  `
+})
+export class ExpandableComponent {
+  @ContentChild('footer') footerContent?: ElementRef;
+  
+  isExpanded = false;
+  
+  get hasFooter(): boolean {
+    return !!this.footerContent;
+  }
+  
+  toggle() { this.isExpanded = !this.isExpanded; }
+}
+```
+
+### 16.5 ngProjectAs
+
+```typescript
+// Quando o component pai usa um seletor específico mas você quer projetar algo diferente
 <app-card>
-  <h2 slot="header">Título</h2>
-  <p>Conteúdo</p>
+  <!-- Sem ngProjectAs: ng-container não tem tag, então select="[card-header]" não pega -->
+  <!-- Com ngProjectAs: finge ser um elemento com atributo card-header -->
+  <ng-container ngProjectAs="[card-header]">
+    <h2 *ngIf="showTitle">{{ title }}</h2>
+  </ng-container>
 </app-card>
 ```
 
@@ -1558,14 +3505,117 @@ import { ScrollingModule } from '@angular/cdk/scrolling';
 <a name="17-viewchild"></a>
 ## 17. ViewChild & ContentChild
 
-```typescript
-@ViewChild('input') input!: ElementRef;
-@ViewChild(ChildComponent) child!: ChildComponent;
-@ViewChildren(ItemComponent) items!: QueryList<ItemComponent>;
+### 17.1 @ViewChild - Referência a Elementos/Components na View
 
-ngAfterViewInit() {
-  this.input.nativeElement.focus();
+```typescript
+@Component({
+  template: `
+    <input #searchInput>
+    <app-child-component></app-child-component>
+    <div #container></div>
+  `
+})
+export class ParentComponent implements AfterViewInit {
+  // Referência a elemento DOM
+  @ViewChild('searchInput') searchInput!: ElementRef<HTMLInputElement>;
+  
+  // Referência a component filho
+  @ViewChild(ChildComponent) child!: ChildComponent;
+  
+  // Referência a ViewContainerRef (para components dinâmicos)
+  @ViewChild('container', { read: ViewContainerRef }) container!: ViewContainerRef;
+  
+  // Static: true = disponível no ngOnInit (se não depender de *ngIf/*ngFor)
+  @ViewChild('alwaysPresent', { static: true }) alwaysPresent!: ElementRef;
+  
+  // ⚠️ Disponível a partir de ngAfterViewInit (não no constructor/ngOnInit)
+  ngAfterViewInit() {
+    this.searchInput.nativeElement.focus();
+    this.child.someMethod();
+  }
 }
+```
+
+### 17.2 @ViewChildren - Múltiplas Referências
+
+```typescript
+@Component({
+  template: `
+    <app-tab *ngFor="let tab of tabs" [data]="tab"></app-tab>
+  `
+})
+export class TabsComponent implements AfterViewInit {
+  @ViewChildren(TabComponent) tabComponents!: QueryList<TabComponent>;
+  
+  ngAfterViewInit() {
+    // Iterar sobre todos
+    this.tabComponents.forEach(tab => tab.deactivate());
+    this.tabComponents.first.activate();
+    
+    // Reagir quando lista muda (add/remove tabs)
+    this.tabComponents.changes.subscribe((tabs: QueryList<TabComponent>) => {
+      console.log('Tabs mudaram:', tabs.length);
+    });
+  }
+  
+  activateTab(index: number) {
+    const tabs = this.tabComponents.toArray();
+    tabs.forEach(t => t.deactivate());
+    tabs[index]?.activate();
+  }
+}
+```
+
+### 17.3 @ContentChild / @ContentChildren - Conteúdo Projetado
+
+```typescript
+// Container que acessa conteúdo projetado via <ng-content>
+@Component({
+  selector: 'app-accordion',
+  template: `
+    <div class="accordion">
+      <ng-content select="app-accordion-item"></ng-content>
+    </div>
+  `
+})
+export class AccordionComponent implements AfterContentInit {
+  @ContentChildren(AccordionItemComponent) items!: QueryList<AccordionItemComponent>;
+  
+  ngAfterContentInit() {
+    // Disponível aqui (não no AfterViewInit)
+    this.items.forEach((item, index) => {
+      item.toggle.subscribe(() => this.closeOthers(index));
+    });
+    
+    // Quando items mudam dinamicamente
+    this.items.changes.subscribe(() => {
+      // Re-setup
+    });
+  }
+  
+  closeOthers(openIndex: number) {
+    this.items.forEach((item, i) => {
+      if (i !== openIndex) item.close();
+    });
+  }
+}
+
+// Uso:
+<app-accordion>
+  <app-accordion-item *ngFor="let faq of faqs" [title]="faq.title">
+    {{ faq.answer }}
+  </app-accordion-item>
+</app-accordion>
+```
+
+### 17.4 Diferença entre ViewChild e ContentChild
+
+```
+@ViewChild:   Elementos definidos no TEMPLATE do component
+@ContentChild: Elementos PROJETADOS via <ng-content>
+
+Template:     O que está no templateUrl/template do @Component
+Content:      O que o PAI coloca entre <app-meu-component>AQUI</app-meu-component>
 ```
 
 ---
@@ -1573,14 +3623,104 @@ ngAfterViewInit() {
 <a name="18-dynamic-components"></a>
 ## 18. DYNAMIC COMPONENTS
 
-```typescript
-@ViewChild('container', { read: ViewContainerRef }) container!: ViewContainerRef;
+### 18.1 Criação Dinâmica com ViewContainerRef
 
-loadComponent() {
-  this.container.clear();
-  const ref = this.container.createComponent(AlertComponent);
-  ref.instance.message = 'Alerta!';
+```typescript
+@Component({
+  template: `
+    <div #dynamicContainer></div>
+    <button (click)="loadAlert()">Mostrar Alert</button>
+    <button (click)="loadDialog()">Mostrar Dialog</button>
+  `
+})
+export class DynamicHostComponent {
+  @ViewChild('dynamicContainer', { read: ViewContainerRef }) container!: ViewContainerRef;
+  
+  loadAlert() {
+    this.container.clear();  // Remove component anterior
+    const componentRef = this.container.createComponent(AlertComponent);
+    
+    // Setar @Input
+    componentRef.instance.message = 'Operação concluída!';
+    componentRef.instance.type = 'success';
+    
+    // Escutar @Output
+    componentRef.instance.closed.subscribe(() => {
+      componentRef.destroy();
+    });
+  }
+  
+  loadDialog() {
+    this.container.clear();
+    const ref = this.container.createComponent(DialogComponent);
+    ref.instance.title = 'Confirmar';
+    ref.instance.confirmed.subscribe(() => this.onConfirm());
+  }
 }
+```
+
+### 18.2 Lazy Load de Component Dinâmico
+
+```typescript
+async loadHeavyComponent() {
+  this.container.clear();
+  
+  // Importação dinâmica - só baixa quando necessário
+  const { HeavyChartComponent } = await import('./heavy-chart.component');
+  const ref = this.container.createComponent(HeavyChartComponent);
+  ref.instance.data = this.chartData;
+}
+```
+
+### 18.3 Component Factory Pattern
+
+```typescript
+// Registry de components
+@Injectable({ providedIn: 'root' })
+export class WidgetRegistry {
+  private widgets = new Map<string, Type<any>>();
+  
+  register(type: string, component: Type<any>) {
+    this.widgets.set(type, component);
+  }
+  
+  get(type: string): Type<any> | undefined {
+    return this.widgets.get(type);
+  }
+}
+
+// Host que renderiza baseado em config
+@Component({
+  selector: 'app-widget-host',
+  template: `<ng-container #widgetContainer></ng-container>`
+})
+export class WidgetHostComponent implements OnInit, OnChanges {
+  @Input() config!: WidgetConfig;
+  @ViewChild('widgetContainer', { read: ViewContainerRef, static: true }) 
+  container!: ViewContainerRef;
+  
+  constructor(private registry: WidgetRegistry) {}
+  
+  ngOnChanges() {
+    this.loadWidget();
+  }
+  
+  private loadWidget() {
+    this.container.clear();
+    const componentType = this.registry.get(this.config.type);
+    
+    if (componentType) {
+      const ref = this.container.createComponent(componentType);
+      Object.assign(ref.instance, this.config.props);
+    }
+  }
+}
+
+// Uso: Dashboard com widgets configuráveis
+<app-widget-host 
+  *ngFor="let widget of dashboardConfig"
+  [config]="widget">
+</app-widget-host>
 ```
 
 ---
@@ -1588,19 +3728,147 @@ loadComponent() {
 <a name="19-animations"></a>
 ## 19. ANIMATIONS
 
+### 19.1 Setup
+
 ```typescript
-import { trigger, state, style, transition, animate } from '@angular/animations';
+// Importar no módulo ou providers
+import { provideAnimations } from '@angular/platform-browser/animations';
+// OU para lazy: provideAnimationsAsync()
+
+bootstrapApplication(AppComponent, {
+  providers: [provideAnimations()]
+});
+```
+
+### 19.2 Animações Básicas
+
+```typescript
+import { trigger, state, style, transition, animate, query, stagger, group } from '@angular/animations';
 
 @Component({
   animations: [
-    trigger('fadeIn', [
+    // Fade in/out
+    trigger('fadeInOut', [
       transition(':enter', [
         style({ opacity: 0 }),
-        animate('300ms', style({ opacity: 1 }))
+        animate('300ms ease-in', style({ opacity: 1 }))
+      ]),
+      transition(':leave', [
+        animate('300ms ease-out', style({ opacity: 0 }))
+      ])
+    ]),
+    
+    // Slide
+    trigger('slideIn', [
+      transition(':enter', [
+        style({ transform: 'translateX(-100%)', opacity: 0 }),
+        animate('400ms ease-out', style({ transform: 'translateX(0)', opacity: 1 }))
+      ]),
+      transition(':leave', [
+        animate('400ms ease-in', style({ transform: 'translateX(100%)', opacity: 0 }))
+      ])
+    ]),
+    
+    // State-based
+    trigger('expandCollapse', [
+      state('collapsed', style({ height: '0px', overflow: 'hidden', opacity: 0 })),
+      state('expanded', style({ height: '*', opacity: 1 })),
+      transition('collapsed <=> expanded', animate('300ms ease-in-out'))
+    ]),
+    
+    // Staggered list animation
+    trigger('listAnimation', [
+      transition('* => *', [
+        query(':enter', [
+          style({ opacity: 0, transform: 'translateY(20px)' }),
+          stagger(50, [
+            animate('300ms ease-out', style({ opacity: 1, transform: 'translateY(0)' }))
+          ])
+        ], { optional: true })
       ])
     ])
-  ]
+  ],
+  template: `
+    <div @fadeInOut *ngIf="showContent">Fade content</div>
+    
+    <div [@expandCollapse]="isExpanded ? 'expanded' : 'collapsed'">
+      Expandable content
+    </div>
+    
+    <div [@listAnimation]="items.length">
+      <div *ngFor="let item of items" @slideIn>{{ item }}</div>
+    </div>
+  `
 })
+export class AnimatedComponent {
+  showContent = true;
+  isExpanded = false;
+  items: string[] = [];
+}
+```
+
+### 19.3 Animações Reutilizáveis
+
+```typescript
+// animations.ts - Arquivo separado
+import { trigger, transition, style, animate } from '@angular/animations';
+
+export const fadeIn = trigger('fadeIn', [
+  transition(':enter', [
+    style({ opacity: 0 }),
+    animate('300ms ease-in', style({ opacity: 1 }))
+  ])
+]);
+
+export const slideInFromLeft = trigger('slideInFromLeft', [
+  transition(':enter', [
+    style({ transform: 'translateX(-100%)' }),
+    animate('400ms ease-out')
+  ])
+]);
+
+// Uso em qualquer component
+@Component({
+  animations: [fadeIn, slideInFromLeft]
+})
+```
+
+### 19.4 Route Animations
+
+```typescript
+// Animar transições de rota
+const routeAnimation = trigger('routeAnimation', [
+  transition('* <=> *', [
+    query(':enter, :leave', style({ position: 'absolute', width: '100%' }), { optional: true }),
+    group([
+      query(':leave', [
+        animate('300ms ease-out', style({ opacity: 0, transform: 'translateX(-50px)' }))
+      ], { optional: true }),
+      query(':enter', [
+        style({ opacity: 0, transform: 'translateX(50px)' }),
+        animate('300ms ease-out', style({ opacity: 1, transform: 'translateX(0)' }))
+      ], { optional: true })
+    ])
+  ])
+]);
+
+@Component({
+  animations: [routeAnimation],
+  template: `
+    <div [@routeAnimation]="getRouteAnimationData()">
+      <router-outlet></router-outlet>
+    </div>
+  `
+})
+export class AppComponent {
+  getRouteAnimationData() {
+    return this.route.snapshot.firstChild?.data?.['animation'];
+  }
+}
+
+// Nas rotas
+{ path: 'home', component: HomeComponent, data: { animation: 'Home' } },
+{ path: 'about', component: AboutComponent, data: { animation: 'About' } }
 ```
 
 ---
@@ -1608,104 +3876,858 @@ import { trigger, state, style, transition, animate } from '@angular/animations'
 <a name="20-ssr"></a>
 ## 20. SSR (Server-Side Rendering)
 
+### 20.1 O que é e Por que Usar?
+
+| Aspecto | SPA (Client-only) | SSR |
+|---------|-------------------|-----|
+| **First Paint** | Lento (baixa JS → executa → renderiza) | Rápido (HTML pronto) |
+| **SEO** | Ruim (crawlers veem HTML vazio) | Excelente |
+| **Social Sharing** | Meta tags não funcionam | Funciona |
+| **TTFB** | Rápido (HTML simples) | Mais lento (servidor renderiza) |
+| **Infraestrutura** | Estática (CDN) | Precisa Node.js |
+
+### 20.2 Setup (Angular 17+)
+
 ```bash
-ng add @nguniversal/express-engine
+# Novo projeto com SSR
+ng new my-app --ssr
+
+# Adicionar em projeto existente
+ng add @angular/ssr
 ```
 
 ```typescript
-import { isPlatformBrowser } from '@angular/common';
+// server.ts (gerado automaticamente)
+import { CommonEngine } from '@angular/ssr';
+import express from 'express';
 
-if (isPlatformBrowser(this.platformId)) {
-  // Só executa no browser
-  localStorage.setItem('key', 'value');
+const app = express();
+const commonEngine = new CommonEngine();
+
+app.get('*', (req, res) => {
+  commonEngine.render({
+    bootstrap: AppServerModule,
+    documentFilePath: indexHtml,
+    url: req.url,
+  }).then(html => res.send(html));
+});
+```
+
+### 20.3 Cuidados com SSR
+
+```typescript
+import { isPlatformBrowser, isPlatformServer } from '@angular/common';
+import { PLATFORM_ID, inject } from '@angular/core';
+
+export class MyComponent {
+  private platformId = inject(PLATFORM_ID);
+  
+  ngOnInit() {
+    // ❌ Erro no servidor (window não existe)
+    window.scrollTo(0, 0);
+    localStorage.setItem('key', 'value');
+    document.getElementById('el');
+    
+    // ✅ Verificar plataforma
+    if (isPlatformBrowser(this.platformId)) {
+      window.scrollTo(0, 0);
+      localStorage.setItem('key', 'value');
+    }
+    
+    // ✅ Ou usar afterNextRender (Angular 16+)
+  }
 }
+
+// afterNextRender - código que só roda no browser APÓS render
+export class ChartComponent {
+  constructor() {
+    afterNextRender(() => {
+      // Seguro para acessar DOM, window, etc
+      this.initChart();
+    });
+  }
+}
+
+// afterRender - roda após CADA render no browser
+export class AutoResizeComponent {
+  constructor() {
+    afterRender(() => {
+      this.adjustHeight();
+    });
+  }
+}
+```
+
+### 20.4 Hydration (Angular 16+)
+
+```typescript
+// Hydration permite que o client Angular "assuma" o HTML do servidor
+// ao invés de destruir e recriar tudo
+
+// main.ts
+bootstrapApplication(AppComponent, {
+  providers: [
+    provideClientHydration()  // ← Ativa hydration!
+  ]
+});
+
+// Benefícios:
+// - Não pisca (sem flash of unstyled content)
+// - Preserva estado do DOM
+// - Event listeners são adicionados ao HTML existente
+// - Performance muito melhor que re-render completo
+```
+
+### 20.5 SSG (Static Site Generation)
+
+```typescript
+// Para páginas estáticas (blog, docs)
+// angular.json
+{
+  "prerender": {
+    "routesFile": "routes.txt"  // Lista de rotas para gerar estaticamente
+  }
+}
+
+// routes.txt
+/
+/about
+/blog/post-1
+/blog/post-2
 ```
 
 ---
 
 <a name="21-pwa"></a>
-## 21. PWA
+## 21. PWA (Progressive Web Apps)
+
+### 21.1 Setup
 
 ```bash
 ng add @angular/pwa
 ```
 
+Isso adiciona automaticamente:
+- `ngsw-config.json` (configuração do Service Worker)
+- `manifest.webmanifest` (metadata do app)
+- Ícones padrão
+- Service Worker registration
+
+### 21.2 Configuração do Service Worker
+
+```json
+// ngsw-config.json
+{
+  "index": "/index.html",
+  "assetGroups": [
+    {
+      "name": "app",
+      "installMode": "prefetch",
+      "resources": {
+        "files": [
+          "/favicon.ico",
+          "/index.html",
+          "/manifest.webmanifest",
+          "/*.css",
+          "/*.js"
+        ]
+      }
+    },
+    {
+      "name": "assets",
+      "installMode": "lazy",
+      "updateMode": "prefetch",
+      "resources": {
+        "files": [
+          "/assets/**"
+        ]
+      }
+    }
+  ],
+  "dataGroups": [
+    {
+      "name": "api-performance",
+      "urls": ["/api/products"],
+      "cacheConfig": {
+        "maxSize": 100,
+        "maxAge": "1h",
+        "strategy": "performance"
+      }
+    },
+    {
+      "name": "api-freshness",
+      "urls": ["/api/users"],
+      "cacheConfig": {
+        "maxSize": 50,
+        "maxAge": "10m",
+        "timeout": "5s",
+        "strategy": "freshness"
+      }
+    }
+  ]
+}
+```
+
+### 21.3 Update Notifications
+
+```typescript
+@Injectable({ providedIn: 'root' })
+export class PwaUpdateService {
+  constructor(
+    private swUpdate: SwUpdate,
+    private snackbar: MatSnackBar
+  ) {
+    if (swUpdate.isEnabled) {
+      // Checar atualizações periodicamente
+      interval(60000).subscribe(() => swUpdate.checkForUpdate());
+      
+      // Notificar quando atualização disponível
+      swUpdate.versionUpdates.pipe(
+        filter((event): event is VersionReadyEvent => event.type === 'VERSION_READY')
+      ).subscribe(() => {
+        const snack = this.snackbar.open('Nova versão disponível!', 'Atualizar');
+        snack.onAction().subscribe(() => {
+          window.location.reload();
+        });
+      });
+    }
+  }
+}
+```
+
+### 21.4 Offline Capabilities
+
+```typescript
+// Detectar status online/offline
+@Injectable({ providedIn: 'root' })
+export class ConnectivityService {
+  isOnline$ = merge(
+    fromEvent(window, 'online').pipe(map(() => true)),
+    fromEvent(window, 'offline').pipe(map(() => false))
+  ).pipe(
+    startWith(navigator.onLine)
+  );
+}
+
+// Usar no component
+@Component({
+  template: `
+    @if (!(connectivity.isOnline$ | async)) {
+      <div class="offline-banner">Você está offline</div>
+    }
+  `
+})
+```
+
 ---
 
-<a name="22-boas-praticas"></a>
-## 22. BOAS PRÁTICAS & DESIGN PATTERNS
+<a name="22-state-management"></a>
+## 22. STATE MANAGEMENT
 
-### 22.1 SOLID Principles
+### 22.1 Quando Usar Cada Abordagem
 
-- **S**ingle Responsibility: Um component/service faz uma coisa
-- **O**pen/Closed: Aberto para extensão, fechado para modificação
-- **L**iskov Substitution: Substituível por subtipos
-- **I**nterface Segregation: Interfaces pequenas e específicas
-- **D**ependency Inversion: Dependa de abstrações
+| Abordagem | Complexidade | Quando Usar |
+|-----------|-------------|-------------|
+| **Component State** | Baixa | Dados locais de um component |
+| **Service + BehaviorSubject** | Média | Feature-level state |
+| **Signals** | Média | Angular 16+, state síncrono |
+| **Facade Pattern** | Média-Alta | Organizar services complexos |
+| **NgRx/NGXS** | Alta | App enterprise, muitos devs, estado global complexo |
 
-### 22.2 Patterns
+### 22.2 Service + BehaviorSubject (Mais Comum)
 
-- **Smart/Dumb Components**
-- **Facade Pattern** (Services)
-- **Observer Pattern** (RxJS)
-- **Repository Pattern** (Data access)
+```typescript
+@Injectable({ providedIn: 'root' })
+export class CartStore {
+  private itemsSubject = new BehaviorSubject<CartItem[]>([]);
+  
+  items$ = this.itemsSubject.asObservable();
+  total$ = this.items$.pipe(
+    map(items => items.reduce((sum, item) => sum + item.price * item.qty, 0))
+  );
+  count$ = this.items$.pipe(
+    map(items => items.reduce((sum, item) => sum + item.qty, 0))
+  );
+  
+  addItem(product: Product) {
+    const items = this.itemsSubject.value;
+    const existing = items.find(i => i.id === product.id);
+    
+    if (existing) {
+      this.itemsSubject.next(
+        items.map(i => i.id === product.id ? { ...i, qty: i.qty + 1 } : i)
+      );
+    } else {
+      this.itemsSubject.next([...items, { ...product, qty: 1 }]);
+    }
+  }
+  
+  removeItem(id: number) {
+    this.itemsSubject.next(this.itemsSubject.value.filter(i => i.id !== id));
+  }
+  
+  clear() {
+    this.itemsSubject.next([]);
+  }
+}
+```
+
+### 22.3 Signal Store (Angular 16+)
+
+```typescript
+@Injectable({ providedIn: 'root' })
+export class CartSignalStore {
+  // Estado
+  items = signal<CartItem[]>([]);
+  
+  // Derivados
+  total = computed(() => 
+    this.items().reduce((sum, item) => sum + item.price * item.qty, 0)
+  );
+  count = computed(() => 
+    this.items().reduce((sum, item) => sum + item.qty, 0)
+  );
+  isEmpty = computed(() => this.items().length === 0);
+  
+  // Ações
+  addItem(product: Product) {
+    this.items.update(items => {
+      const existing = items.find(i => i.id === product.id);
+      if (existing) {
+        return items.map(i => i.id === product.id ? { ...i, qty: i.qty + 1 } : i);
+      }
+      return [...items, { ...product, qty: 1 }];
+    });
+  }
+  
+  removeItem(id: number) {
+    this.items.update(items => items.filter(i => i.id !== id));
+  }
+  
+  clear() {
+    this.items.set([]);
+  }
+}
+```
+
+### 22.4 NgRx (Resumo para Entrevista)
+
+```
+Fluxo: Component → Action → Reducer → Store → Selector → Component
+
+Store: Estado global imutável
+Action: Descreve o que aconteceu { type: '[Cart] Add Item', product }
+Reducer: Função pura (state, action) => newState
+Selector: Consulta derivada do estado
+Effect: Side effects (HTTP, localStorage, etc)
+```
+
+```typescript
+// Saber explicar quando usar:
+// ✅ Usar NgRx quando:
+// - App grande com muitos devs
+// - Estado compartilhado complexo entre muitos components
+// - Precisa de undo/redo, time travel debug
+// - Precisa de histórico de ações
+
+// ❌ NÃO usar quando:
+// - App pequena/média
+// - Estado pode ser gerenciado por services
+// - Equipe não conhece Redux pattern
+// - Over-engineering desnecessário
+```
 
 ---
 
-<a name="23-comparacao-versoes"></a>
-## 23. COMPARAÇÃO DE VERSÕES DO ANGULAR
+<a name="23-security"></a>
+## 23. SECURITY
 
-### 23.1 Timeline de Versões
+### 23.1 XSS Protection
+
+```typescript
+// Angular sanitiza automaticamente
+// ❌ Isso NÃO executa script:
+<div>{{ userInput }}</div>
+// Se userInput = '<script>alert("xss")</script>'
+// Renderiza como texto, não como HTML
+
+// Quando PRECISA renderizar HTML:
+<div [innerHTML]="trustedHtml"></div>
+// Angular sanitiza automaticamente, remove scripts
+
+// Bypass manual (USE COM CUIDADO)
+import { DomSanitizer } from '@angular/platform-browser';
+
+constructor(private sanitizer: DomSanitizer) {}
+
+trustedUrl = this.sanitizer.bypassSecurityTrustResourceUrl('https://youtube.com/embed/...');
+trustedHtml = this.sanitizer.bypassSecurityTrustHtml('<b>Safe HTML</b>');
+```
+
+### 23.2 CSRF Protection
+
+```typescript
+// Angular HttpClient envia cookie XSRF-TOKEN automaticamente
+// Basta o backend setar o cookie
+
+// Customizar se necessário
+provideHttpClient(
+  withXsrfConfiguration({
+    cookieName: 'MY-XSRF-TOKEN',
+    headerName: 'X-MY-XSRF-TOKEN'
+  })
+)
+```
+
+### 23.3 Route Guards para Autorização
+
+```typescript
+// Guard baseado em roles
+export const roleGuard: CanActivateFn = (route) => {
+  const auth = inject(AuthService);
+  const requiredRoles = route.data['roles'] as string[];
+  
+  if (requiredRoles.some(role => auth.hasRole(role))) {
+    return true;
+  }
+  return inject(Router).createUrlTree(['/forbidden']);
+};
+
+// Nas rotas
+{ 
+  path: 'admin', 
+  canActivate: [roleGuard], 
+  data: { roles: ['admin', 'superadmin'] } 
+}
+```
+
+### 23.4 JWT Handling
+
+```typescript
+// NUNCA armazenar token em localStorage (vulnerável a XSS)
+// Preferir: httpOnly cookie (setado pelo backend)
+// Se precisar de localStorage, garantir sanitização rigorosa
+
+@Injectable({ providedIn: 'root' })
+export class TokenService {
+  private tokenKey = 'auth_token';
+  
+  getToken(): string | null {
+    return localStorage.getItem(this.tokenKey);
+  }
+  
+  isTokenExpired(): boolean {
+    const token = this.getToken();
+    if (!token) return true;
+    
+    try {
+      const payload = JSON.parse(atob(token.split('.')[1]));
+      return payload.exp * 1000 < Date.now();
+    } catch {
+      return true;
+    }
+  }
+}
+```
+
+---
+
+<a name="24-i18n"></a>
+## 24. INTERNACIONALIZAÇÃO (i18n)
+
+### 24.1 Angular Built-in i18n
+
+```html
+<!-- Marcar para tradução -->
+<h1 i18n="site header|Welcome message for the user">Welcome</h1>
+
+<!-- Com id customizado -->
+<p i18n="@@welcomeMessage">Welcome to our app</p>
+
+<!-- Pluralização -->
+<span i18n>{count, plural, 
+  =0 {Nenhuma mensagem}
+  =1 {1 mensagem}
+  other {{{count}} mensagens}
+}</span>
+
+<!-- Select -->
+<span i18n>{gender, select,
+  male {Ele}
+  female {Ela}
+  other {Pessoa}
+} está online.</span>
+```
+
+```bash
+# Extrair mensagens
+ng extract-i18n --output-path src/locale
+
+# Build para idioma específico
+ng build --localize
+```
+
+### 24.2 ngx-translate (Runtime i18n)
+
+```typescript
+// Mais flexível que built-in (troca idioma sem rebuild)
+import { TranslateModule, TranslateService } from '@ngx-translate/core';
+
+// No component
+constructor(private translate: TranslateService) {
+  translate.setDefaultLang('pt');
+  translate.use('pt');
+}
+
+// No template
+<h1>{{ 'HOME.TITLE' | translate }}</h1>
+<p>{{ 'HOME.WELCOME' | translate:{ name: userName } }}</p>
+
+// Trocar idioma em runtime
+switchLang(lang: string) {
+  this.translate.use(lang);
+}
+```
+
+---
+
+<a name="25-boas-praticas"></a>
+## 25. BOAS PRÁTICAS & DESIGN PATTERNS
+
+### 25.1 SOLID no Angular
+
+```
+S - Single Responsibility
+    - 1 component = 1 responsabilidade
+    - Services separados para API, estado, lógica
+
+O - Open/Closed
+    - Use @Input/@Output para customizar components
+    - Content projection para extensibilidade
+
+L - Liskov Substitution
+    - Interfaces para services (pode trocar implementação)
+
+I - Interface Segregation
+    - Interfaces pequenas e específicas
+    - Não force component a implementar métodos que não usa
+
+D - Dependency Inversion
+    - Injete services via DI
+    - Use InjectionTokens para abstrações
+```
+
+### 25.2 Estrutura de Pastas (Feature-based)
+
+```
+src/app/
+├── core/                    # Singleton services, guards, interceptors
+│   ├── services/
+│   │   ├── auth.service.ts
+│   │   └── api.service.ts
+│   ├── guards/
+│   │   └── auth.guard.ts
+│   ├── interceptors/
+│   │   ├── auth.interceptor.ts
+│   │   └── error.interceptor.ts
+│   └── core.module.ts       # Importado 1x no AppModule
+│
+├── shared/                  # Components, pipes, directives reutilizáveis
+│   ├── components/
+│   │   ├── button/
+│   │   ├── modal/
+│   │   └── spinner/
+│   ├── pipes/
+│   │   ├── truncate.pipe.ts
+│   │   └── time-ago.pipe.ts
+│   ├── directives/
+│   │   └── click-outside.directive.ts
+│   └── shared.module.ts     # Exporta tudo reutilizável
+│
+├── features/                # Módulos por feature (lazy loaded)
+│   ├── users/
+│   │   ├── components/
+│   │   │   ├── user-list/
+│   │   │   ├── user-card/
+│   │   │   └── user-form/
+│   │   ├── services/
+│   │   │   └── user.service.ts
+│   │   ├── models/
+│   │   │   └── user.model.ts
+│   │   ├── users-routing.module.ts
+│   │   └── users.module.ts
+│   │
+│   └── products/
+│       ├── ...
+│
+├── layouts/                 # Layouts de página
+│   ├── main-layout/
+│   └── auth-layout/
+│
+└── app.module.ts
+```
+
+### 25.3 Naming Conventions
+
+```
+Components:   user-list.component.ts     → UserListComponent
+Services:     user.service.ts            → UserService
+Directives:   highlight.directive.ts     → HighlightDirective
+Pipes:        truncate.pipe.ts           → TruncatePipe
+Guards:       auth.guard.ts              → AuthGuard / authGuard (functional)
+Interceptors: auth.interceptor.ts        → AuthInterceptor / authInterceptor
+Models:       user.model.ts              → User (interface)
+Enums:        user-role.enum.ts          → UserRole
+```
+
+### 25.4 Patterns Importantes
+
+```typescript
+// 1. Facade Pattern - já mostrado na seção 4.6
+
+// 2. Adapter Pattern - Normalizar APIs de terceiros
+@Injectable({ providedIn: 'root' })
+export class PaymentAdapter {
+  constructor(
+    private stripe: StripeService,
+    private paypal: PayPalService
+  ) {}
+  
+  pay(method: 'stripe' | 'paypal', amount: number): Observable<PaymentResult> {
+    if (method === 'stripe') {
+      return this.stripe.charge(amount).pipe(
+        map(r => ({ success: r.status === 'succeeded', id: r.id }))
+      );
+    }
+    return this.paypal.createPayment(amount).pipe(
+      map(r => ({ success: r.approved, id: r.orderId }))
+    );
+  }
+}
+
+// 3. Strategy Pattern - Estratégias intercambiáveis
+interface SortStrategy<T> {
+  sort(items: T[]): T[];
+}
+
+class NameSortStrategy implements SortStrategy<User> {
+  sort(items: User[]) { return [...items].sort((a, b) => a.name.localeCompare(b.name)); }
+}
+
+class DateSortStrategy implements SortStrategy<User> {
+  sort(items: User[]) { return [...items].sort((a, b) => b.createdAt - a.createdAt); }
+}
+
+// 4. Mediator Pattern - Services como mediador entre components
+@Injectable({ providedIn: 'root' })
+export class DashboardMediator {
+  private filterChange$ = new Subject<Filters>();
+  private refreshRequest$ = new Subject<void>();
+  
+  onFilterChange$ = this.filterChange$.asObservable();
+  onRefreshRequest$ = this.refreshRequest$.asObservable();
+  
+  changeFilter(filters: Filters) { this.filterChange$.next(filters); }
+  requestRefresh() { this.refreshRequest$.next(); }
+}
+```
+
+### 25.5 Regras de Ouro
+
+```
+✅ SEMPRE:
+- Usar tipagem forte (evitar `any`)
+- Unsubscribe de Observables (takeUntil, async pipe, takeUntilDestroyed)
+- OnPush quando possível
+- trackBy em loops
+- Lazy loading de features
+- Error handling em HTTP calls
+- Loading, error, e empty states no UI
+
+❌ NUNCA:
+- Lógica de negócio no component (use Service)
+- HTTP call direta no component (use Service)
+- Mutação direta com OnPush
+- Console.log em produção
+- Ignorar memory leaks
+- any sem justificativa
+- Subscriptions dentro de subscriptions (use switchMap)
+```
+
+---
+
+<a name="26-arquitetura"></a>
+## 26. ARQUITETURA DE PROJETOS GRANDES
+
+### 26.1 Monorepo com Nx
+
+```
+workspace/
+├── apps/
+│   ├── web-app/          # App principal
+│   ├── admin-app/        # App admin
+│   └── mobile-app/       # App mobile
+│
+├── libs/
+│   ├── shared/
+│   │   ├── ui/           # Components compartilhados
+│   │   ├── utils/        # Funções utilitárias
+│   │   └── models/       # Interfaces/tipos
+│   ├── features/
+│   │   ├── auth/         # Feature de auth
+│   │   └── dashboard/    # Feature de dashboard
+│   └── data-access/
+│       ├── user/         # Service + state de user
+│       └── product/      # Service + state de product
+```
+
+### 26.2 Micro-frontends com Module Federation
+
+```typescript
+// Shell (host)
+const routes: Routes = [
+  {
+    path: 'products',
+    loadRemoteModule({
+      type: 'module',
+      remoteEntry: 'http://localhost:4201/remoteEntry.js',
+      exposedModule: './ProductModule'
+    }).then(m => m.ProductModule)
+  }
+];
+
+// Remote (micro-frontend)
+// webpack.config.js
+new ModuleFederationPlugin({
+  name: 'products',
+  filename: 'remoteEntry.js',
+  exposes: {
+    './ProductModule': './src/app/products/products.module.ts'
+  }
+});
+```
+
+### 26.3 API Layer Pattern
+
+```typescript
+// Camada de abstração para APIs
+@Injectable({ providedIn: 'root' })
+export abstract class BaseApiService {
+  protected abstract baseUrl: string;
+  
+  constructor(protected http: HttpClient) {}
+  
+  protected getAll<T>(endpoint: string, params?: HttpParams): Observable<T[]> {
+    return this.http.get<T[]>(`${this.baseUrl}/${endpoint}`, { params });
+  }
+  
+  protected getOne<T>(endpoint: string, id: number | string): Observable<T> {
+    return this.http.get<T>(`${this.baseUrl}/${endpoint}/${id}`);
+  }
+  
+  protected create<T>(endpoint: string, body: Partial<T>): Observable<T> {
+    return this.http.post<T>(`${this.baseUrl}/${endpoint}`, body);
+  }
+  
+  protected update<T>(endpoint: string, id: number | string, body: Partial<T>): Observable<T> {
+    return this.http.patch<T>(`${this.baseUrl}/${endpoint}/${id}`, body);
+  }
+  
+  protected remove(endpoint: string, id: number | string): Observable<void> {
+    return this.http.delete<void>(`${this.baseUrl}/${endpoint}/${id}`);
+  }
+}
+
+@Injectable({ providedIn: 'root' })
+export class UserApiService extends BaseApiService {
+  protected baseUrl = environment.apiUrl;
+  
+  getUsers(params?: HttpParams) { return this.getAll<User>('users', params); }
+  getUser(id: number) { return this.getOne<User>('users', id); }
+  createUser(user: Partial<User>) { return this.create<User>('users', user); }
+  updateUser(id: number, user: Partial<User>) { return this.update<User>('users', id, user); }
+  deleteUser(id: number) { return this.remove('users', id); }
+}
+```
+
+---
+
+<a name="27-comparacao-versoes"></a>
+## 27. COMPARAÇÃO DE VERSÕES DO ANGULAR
+
+### 27.1 Timeline de Versões
 
 | Versão | Data | Principais Features |
 |--------|------|---------------------|
-| **Angular 14** | Jun 2022 | Standalone Components (developer preview), Typed Forms |
-| **Angular 15** | Nov 2022 | Standalone APIs stable, Directive Composition API |
-| **Angular 16** | Mai 2023 | **Signals**, Required inputs, DestroyRef |
-| **Angular 17** | Nov 2023 | Novo Control Flow (@if, @for), Deferrable Views |
-| **Angular 18** | Mai 2024 | Zoneless, Material 3, Hydration melhorado |
+| **Angular 14** | Jun 2022 | Standalone Components (preview), Typed Forms |
+| **Angular 15** | Nov 2022 | Standalone APIs stable, Directive Composition, Functional Guards |
+| **Angular 16** | Mai 2023 | **Signals**, Required inputs, DestroyRef, takeUntilDestroyed |
+| **Angular 17** | Nov 2023 | Novo Control Flow (@if, @for), @defer, esbuild, novo logo |
+| **Angular 18** | Mai 2024 | Zoneless (experimental), Material 3, Hydration melhorado |
 
-### 23.2 Angular 14
+### 27.2 Angular 14
 
 **Principais Features:**
-- ✅ Standalone Components (developer preview)
-- ✅ Typed Forms (FormControl tipado)
-- ✅ Bind route info to component inputs
-- ✅ CLI auto-completion
+- Standalone Components (developer preview)
+- Typed Forms (FormControl<string>)
+- inject() function
+- CLI auto-completion
 
 ```typescript
-// Typed Forms
+// Typed Forms (grande mudança!)
+// Antes (Angular <14): FormControl value é `any`
+const name = new FormControl('');
+name.value; // any
+
+// Angular 14+: tipado
 const name = new FormControl<string>('');
-name.value;  // string | null
+name.value; // string | null
+name.setValue(42); // ❌ Erro de tipo!
+
+// Strict typed form group
+const form = new FormGroup({
+  name: new FormControl<string>('', { nonNullable: true }),
+  age: new FormControl<number>(0, { nonNullable: true })
+});
+form.value; // { name?: string; age?: number }
+form.getRawValue(); // { name: string; age: number }
 ```
 
-### 23.3 Angular 15
+### 27.3 Angular 15
 
 **Principais Features:**
-- ✅ Standalone APIs stable
-- ✅ Directive Composition API
-- ✅ Image directive (NgOptimizedImage)
-- ✅ Functional router guards
+- Standalone APIs stable
+- Directive Composition API
+- NgOptimizedImage (stable)
+- Functional router guards
+- Stack traces melhoradas
 
 ```typescript
-// Functional guards
+// Functional guards (substituem classes)
 export const authGuard = () => {
   return inject(AuthService).isLoggedIn() || inject(Router).createUrlTree(['/login']);
 };
 
 // Directive Composition
 @Component({
-  hostDirectives: [Tooltip, Focus]
+  hostDirectives: [
+    { directive: TooltipDirective, inputs: ['tooltipText'] },
+    { directive: RippleDirective }
+  ]
 })
+
+// NgOptimizedImage
+<img ngSrc="hero.jpg" width="1200" height="600" priority>
 ```
 
-### 23.4 Angular 16 ⭐
+### 27.4 Angular 16 ⭐
 
 **Principais Features:**
-- ✅ **Signals** (reatividade granular)
-- ✅ Required inputs
-- ✅ DestroyRef (alternativa ao ngOnDestroy)
-- ✅ takeUntilDestroyed operator
+- **Signals** (reatividade granular)
+- Required inputs
+- DestroyRef + takeUntilDestroyed
+- toSignal/toObservable interop
+- Hydration (developer preview)
 
 ```typescript
 // Signals
@@ -1713,30 +4735,35 @@ count = signal(0);
 doubleCount = computed(() => this.count() * 2);
 
 // Required inputs
-@Input({ required: true }) user!: User;
+@Input({ required: true }) userId!: number;
 
-// DestroyRef
+// DestroyRef (alternativa ao ngOnDestroy)
 constructor() {
-  const destroyRef = inject(DestroyRef);
-  destroyRef.onDestroy(() => console.log('Cleanup'));
+  inject(DestroyRef).onDestroy(() => console.log('Cleanup'));
 }
 
-// takeUntilDestroyed
-this.service.getData().pipe(
-  takeUntilDestroyed()  // Auto cleanup!
-).subscribe();
+// takeUntilDestroyed (game changer!)
+constructor() {
+  this.service.getData().pipe(
+    takeUntilDestroyed()  // Sem boilerplate de destroy$!
+  ).subscribe();
+}
+
+// toSignal/toObservable
+users = toSignal(this.http.get<User[]>('/api/users'), { initialValue: [] });
 ```
 
-### 23.5 Angular 17 ⭐⭐
+### 27.5 Angular 17 ⭐⭐
 
 **Principais Features:**
-- ✅ **Novo Control Flow** (@if, @for, @switch)
-- ✅ **Deferrable Views** (@defer)
-- ✅ Novo builder (esbuild)
-- ✅ SSR/SSG melhorados
+- **Novo Control Flow** (@if, @for, @switch) - compilado, mais performante
+- **Deferrable Views** (@defer) - lazy loading granular
+- Novo builder (esbuild + vite) - build muito mais rápido
+- SSR/SSG melhorados
+- Novo branding/logo
 
-```typescript
-// Novo control flow (sem * )
+```html
+<!-- Novo control flow -->
 @if (user) {
   <div>{{ user.name }}</div>
 } @else {
@@ -1745,167 +4772,197 @@ this.service.getData().pipe(
 
 @for (item of items; track item.id) {
   <div>{{ item.name }}</div>
+} @empty {
+  <div>Lista vazia</div>
 }
 
-// Deferrable views (lazy loading de components)
+@switch (status) {
+  @case ('loading') { <spinner /> }
+  @case ('error') { <error /> }
+  @default { <content /> }
+}
+
+<!-- Deferrable views -->
 @defer (on viewport) {
   <heavy-component />
 } @placeholder {
-  <div>Carregando...</div>
+  <skeleton />
+} @loading (minimum 200ms) {
+  <spinner />
+} @error {
+  <error-message />
 }
 ```
 
-### 23.6 Angular 18 (Atual)
+### 27.6 Angular 18
 
 **Principais Features:**
-- ✅ **Zoneless** (experimental)
-- ✅ Material 3
-- ✅ Hydration melhorado
-- ✅ Server route config
+- **Zoneless** change detection (experimental)
+- Material 3 (stable)
+- Improved hydration
+- Signal-based forms (preview)
+- Route redirects with functions
 
 ```typescript
-// Zoneless (sem Zone.js)
+// Zoneless
 bootstrapApplication(AppComponent, {
   providers: [
     provideExperimentalZonelessChangeDetection()
   ]
 });
+
+// Route redirect function
+{
+  path: 'old',
+  redirectTo: (route) => {
+    const param = route.queryParamMap.get('id');
+    return param ? `/new/${param}` : '/new';
+  }
+}
 ```
 
-### 23.7 Tabela Comparativa Resumida
+### 27.7 Tabela Comparativa
 
-| Feature | Angular 14 | Angular 15 | Angular 16 | Angular 17 | Angular 18 |
-|---------|-----------|-----------|-----------|-----------|-----------|
-| Standalone | Preview | Stable | Stable | Stable | Stable |
+| Feature | 14 | 15 | 16 | 17 | 18 |
+|---------|:--:|:--:|:--:|:--:|:--:|
+| Standalone | Preview | Stable | ✅ | ✅ | ✅ |
+| Typed Forms | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Functional Guards | ❌ | ✅ | ✅ | ✅ | ✅ |
+| Directive Composition | ❌ | ✅ | ✅ | ✅ | ✅ |
 | Signals | ❌ | ❌ | ✅ | ✅ | ✅ |
-| Control Flow Novo | ❌ | ❌ | ❌ | ✅ | ✅ |
-| Deferrable Views | ❌ | ❌ | ❌ | ✅ | ✅ |
-| Zoneless | ❌ | ❌ | ❌ | ❌ | ✅ (experimental) |
 | Required Inputs | ❌ | ❌ | ✅ | ✅ | ✅ |
 | DestroyRef | ❌ | ❌ | ✅ | ✅ | ✅ |
-
-### 23.8 Migrações Importantes
-
-**Angular 14 → 15:**
-- Standalone components de preview pra stable
-- Considerar migrar guards para functional guards
-
-**Angular 15 → 16:**
-- **Começar a usar Signals** para state management
-- Adicionar `required: true` em @Input obrigatórios
-
-**Angular 16 → 17:**
-- **Migrar para novo control flow** (@if, @for)
-- Considerar usar @defer para lazy loading
-
-**Angular 17 → 18:**
-- Testar zoneless (se quiser performance máxima)
-- Migrar para Material 3
-
-### 23.9 Compatibilidade com Versões Antigas
-
-**Regra geral:** Angular mantém compatibilidade com **N-1** (versão anterior).
-
-**Exemplo:**
-- Angular 18 é compatível com Angular 17
-- Angular 17 é compatível com Angular 16
-- Mas Angular 18 pode quebrar coisas do Angular 14
-
-**Recomendação:**
-- Atualizar versões incrementalmente (não pule versões)
-- Sempre rodar `ng update` antes
-- Ler CHANGELOG de cada versão
+| Control Flow Novo | ❌ | ❌ | ❌ | ✅ | ✅ |
+| @defer | ❌ | ❌ | ❌ | ✅ | ✅ |
+| Zoneless | ❌ | ❌ | ❌ | ❌ | Exp. |
+| Signal Inputs | ❌ | ❌ | ❌ | Preview | ✅ |
 
 ---
 
-<a name="24-dicas-entrevista"></a>
-## 24. DICAS PARA ENTREVISTA SENIOR
+<a name="28-dicas-entrevista"></a>
+## 28. DICAS PARA ENTREVISTA SENIOR
 
-### 24.1 ❌ Red Flags que te Eliminam
+### 28.1 ❌ Red Flags que te Eliminam
 
-- Não mencionar **memory leaks** (subscriptions)
-- Não separar lógica em **Services**
-- Usar **`any`** sem questionar
-- Não pensar em **error states**
+- Não mencionar **memory leaks** (subscriptions) quando fala de Observables
+- Não separar lógica em **Services** (tudo no component)
+- Usar **`any`** sem questionar ou justificar
+- Não pensar em **error states** (loading, empty, error)
 - Não conhecer **OnPush** e **trackBy**
-- Não conhecer diferença entre **switchMap, mergeMap, concatMap**
+- Não conhecer diferença entre **switchMap, mergeMap, concatMap, exhaustMap**
+- Não saber explicar **lazy loading** e por que importa
+- Não mencionar **testes** quando perguntam como implementaria algo
+- Dizer que NgRx é obrigatório para qualquer app (over-engineering)
+- Não conhecer **Signals** se a vaga pede Angular 16+
 
-### 24.2 ✅ O que Mencionar ao Refatorar
+### 28.2 ✅ O que Mencionar ao Refatorar
 
-1. "Vou separar concerns: **model, service, component**"
-2. "Preciso de **tipagem forte** (interfaces)"
-3. "Garantir **cleanup** com takeUntil/async pipe"
-4. "**Error handling** estruturado, não console.log"
+1. "Vou separar concerns: **model/interface, service, component**"
+2. "Preciso de **tipagem forte** (interfaces, sem any)"
+3. "Garantir **cleanup** com takeUntil/async pipe/takeUntilDestroyed"
+4. "**Error handling** estruturado com catchError, não console.log"
 5. "**Cache** faz sentido aqui (shareReplay)"
 6. "**OnPush** para performance"
 7. "**trackBy** no ngFor para não recriar DOM"
+8. "Vou extrair isso para um **pipe puro** ao invés de método no template"
+9. "**Lazy loading** para essa feature"
+10. "Testes unitários cobrindo os cenários principais"
 
-### 24.3 🎯 Perguntas Comuns
+### 28.3 🎯 Perguntas Comuns e Respostas Ideais
 
 **P:** "Por que não usar NgRx aqui?"  
-**R:** "Overhead desnecessário para feature isolada. State local com Signals/BehaviorSubject é suficiente."
+**R:** "NgRx adiciona complexidade e boilerplate. Para estado local de feature, Service + BehaviorSubject ou Signals são suficientes e mais simples. NgRx faz sentido quando há estado global complexo compartilhado entre muitas features com muitos devs."
 
 **P:** "Como você testaria isso?"  
-**R:** "Service: mockar HttpClient com HttpClientTestingModule. Component: mockar Service com jasmine.createSpyObj."
+**R:** "Service: mockar HttpClient com HttpClientTestingModule. Component: mockar service com jasmine.createSpyObj, testar que chama o service corretamente e que o template renderiza conforme os dados. Guard: testar cenário autorizado e não-autorizado."
 
-**P:** "Performance com 10k usuários?"  
-**R:** "Virtual scrolling (CDK), paginação no backend, OnPush change detection, trackBy no ngFor."
+**P:** "Performance com 10k items na lista?"  
+**R:** "Virtual scrolling com CDK, paginação no backend, OnPush change detection, trackBy no ngFor. Se filtros: usar pure pipe. Se Angular 17+: @defer para components pesados abaixo do fold."
 
 **P:** "Diferença entre switchMap e mergeMap?"  
-**R:** "switchMap cancela requisição anterior (search). mergeMap executa todas em paralelo (batch upload)."
+**R:** "switchMap cancela a requisição anterior — ideal para search/autocomplete. mergeMap executa todas em paralelo — ideal para batch uploads. concatMap mantém ordem — ideal para filas. exhaustMap ignora novos — ideal para prevenir double-click."
 
 **P:** "Como evitar memory leaks?"  
-**R:** "takeUntil pattern com destroy$, async pipe (auto-unsubscribe), ou DestroyRef (Angular 16+)."
+**R:** "Três formas: (1) async pipe no template — unsubscribe automático, (2) takeUntilDestroyed() no Angular 16+, (3) pattern destroy$ com takeUntil. Prefiro async pipe + OnPush quando possível."
 
-### 24.4 💡 Conceitos que SEMPRE Caem
+**P:** "Standalone vs NgModules?"  
+**R:** "Standalone é o futuro e recomendado pelo Angular team. Elimina boilerplate de módulos, melhora tree-shaking, e simplifica lazy loading. Migração pode ser gradual — standalone e módulos coexistem."
+
+**P:** "O que são Signals e por que usar?"  
+**R:** "Signals são primitivos reativos síncronos. Vantagens: (1) sem memory leaks, (2) change detection granular, (3) syntax mais simples que BehaviorSubject. Não substituem RxJS — são complementares. Signals para estado síncrono, Observables para streams assíncronos."
+
+**P:** "Explique Change Detection do Angular."  
+**R:** "Zone.js intercepta eventos assíncronos e dispara change detection. Com Default, checa toda a árvore de components. Com OnPush, só checa quando: @Input muda por referência, evento interno, async pipe emite, ou markForCheck() é chamado. Angular 18 introduz Zoneless experimental, onde Signals disparam CD diretamente sem Zone.js."
+
+**P:** "Como estruturaria um projeto enterprise?"  
+**R:** "Feature-based: core/ para singleton services e interceptors, shared/ para componentes reutilizáveis, features/ para módulos lazy-loaded por domínio. Smart/dumb components, services para lógica, facade pattern se necessário. Monorepo com Nx se múltiplos apps."
+
+### 28.4 💡 Conceitos que SEMPRE Caem
 
 - ✅ Diferença entre **switchMap, mergeMap, concatMap, exhaustMap**
-- ✅ **OnPush** change detection e quando usar
-- ✅ **Memory leaks** e como evitar
+- ✅ **OnPush** change detection e quando/como usar
+- ✅ **Memory leaks** e como evitar (3+ formas)
 - ✅ **Smart vs Dumb** components
 - ✅ **Lazy loading** e code splitting
 - ✅ **Signals vs Observables** (Angular 16+)
-- ✅ **trackBy** no ngFor
+- ✅ **trackBy** no ngFor / track no @for
 - ✅ **shareReplay** para cache
-- ✅ **Reactive Forms** vs Template-Driven
+- ✅ **Reactive Forms** (validação customizada, FormArray)
+- ✅ **Route Guards** (funcional e class-based)
+- ✅ **Interceptors** (auth, error handling, refresh token)
+- ✅ **Testing** (service, component, pipe, guard)
+- ✅ **Dependency Injection** (scopes, tokens, factories)
+- ✅ **Content Projection** e quando usar
+- ✅ **@defer** e estratégias de lazy loading (Angular 17+)
 
-### 24.5 🚀 Durante o Live Coding
+### 28.5 🚀 Durante o Live Coding
 
 **Verbalize seu raciocínio:**
+- "Vou criar uma interface para tipar esses dados"
 - "Vou criar um service para isolar a lógica de API"
 - "Preciso garantir que não vaze memória, então vou usar takeUntil"
-- "OnPush aqui vai melhorar performance porque..."
+- "OnPush aqui vai melhorar performance porque os dados vêm via @Input"
 - "trackBy é essencial para não recriar DOM elements"
+- "Esse filtro no template deveria ser um pure pipe"
+- "Vou adicionar error handling e loading state"
 
 **Mostre que você pensa em produção:**
-- Error handling
+- Error handling estruturado
 - Loading states
 - Empty states
-- Edge cases
-- Accessibility
-- Performance
+- Edge cases (null, undefined, array vazio)
+- Accessibility (aria-labels, roles, keyboard navigation)
+- Performance (OnPush, trackBy, lazy loading)
+- Testes (mencionar como testaria)
+- Segurança (sanitização, guards)
 
-### 24.6 📚 Estude Antes da Entrevista
+### 28.6 📚 Estude Antes da Entrevista
 
-1. **RxJS Operators** - Saiba na ponta da língua
-2. **Change Detection** - OnPush vs Default
-3. **Forms** - Reactive Forms (validação customizada)
-4. **Routing** - Guards, Lazy Loading, Resolve
-5. **Testing** - Jasmine, mocking
-6. **Performance** - trackBy, Virtual Scroll, OnPush
-7. **Signals** - Se a vaga menciona Angular 16+
+1. **RxJS Operators** - switchMap, mergeMap, concatMap, exhaustMap, combineLatest, forkJoin
+2. **Change Detection** - OnPush vs Default, Zone.js, Zoneless
+3. **Forms** - Reactive Forms completo (validação customizada, FormArray, cross-field)
+4. **Routing** - Guards (funcional), Lazy Loading, Resolve, nested routes
+5. **Testing** - Service com HTTP, Component com mocks, Pipes, Guards
+6. **Performance** - trackBy, Virtual Scroll, OnPush, @defer, pure pipes
+7. **Signals** - signal, computed, effect, toSignal, toObservable
+8. **Standalone** - Migração, bootstrap, lazy loading
+9. **HTTP** - Interceptors (auth, error, cache), retry com backoff
+10. **Arquitetura** - Smart/Dumb, Facade, feature-based structure
+11. **Segurança** - XSS, CSRF, JWT, sanitização
+12. **SSR** - Quando usar, cuidados (isPlatformBrowser), hydration
 
 ---
 
 ## 🎉 BOA SORTE NA SUA ENTREVISTA!
 
-Este guia cobre **tudo que você precisa** para uma entrevista de nível Senior. Continue praticando com:
+Este guia cobre **tudo que você precisa** para uma entrevista de nível Senior Angular. Continue praticando com:
 
-1. ✅ Exercícios de lógica
-2. ✅ Live coding de features completas
-3. ✅ Refatoração de código ruim
-4. ✅ Code reviews (olhar código e achar problemas)
+1. ✅ Implementar features completas com todos os patterns (Smart/Dumb, Service, Pipe, Guard)
+2. ✅ Refatorar código ruim aplicando OnPush, trackBy, pipes, tipagem
+3. ✅ Praticar live coding verbalizando decisões
+4. ✅ Code reviews (olhar código e identificar memory leaks, performance issues, bad patterns)
+5. ✅ Criar mini-projetos: CRUD completo com auth, guards, interceptors, forms, testes
 
 **Lembre-se:** Na entrevista, **verbalizar seu raciocínio** é TÃO importante quanto escrever código correto. Mostre que você pensa em produção, não só em fazer funcionar.
 
-**Próximo passo:** Resolver exercícios de lógica para treinar! 🔥
+**Dica final:** Se não sabe a resposta, não invente. Diga "Não tenho certeza sobre isso, mas investigaria na documentação oficial." Honestidade é valorizada.
