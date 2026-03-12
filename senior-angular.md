@@ -4533,28 +4533,201 @@ app.get('**', (req, res, next) => {
 <a name="21-pwa"></a>
 ## 21. PWA (Progressive Web Apps)
 
-### 21.1 Setup
+### 21.1 O que é uma PWA?
+
+Uma PWA é uma aplicação web que usa tecnologias modernas do browser para oferecer uma experiência próxima de um app nativo. As três tecnologias-chave são:
+
+- **Service Worker** — Script que roda em background, separado da thread principal. Intercepta requisições de rede, gerencia cache, e permite funcionamento offline.
+- **Web App Manifest** — Arquivo JSON que descreve o app (nome, ícones, cores, orientação). Permite que o browser ofereça "Adicionar à tela inicial".
+- **HTTPS** — Obrigatório. Service Workers só funcionam em conexões seguras (exceto localhost para dev).
+
+**O que uma PWA permite que uma SPA comum não permite:**
+```
+SPA comum:
+- Funciona só com internet
+- Não aparece na tela inicial do celular
+- Não recebe push notifications
+- Não atualiza em background
+- Não cacheia assets inteligentemente
+
+PWA:
+✅ Funciona offline (ou com conexão ruim)
+✅ Instalável na tela inicial (sem app store)
+✅ Pode receber push notifications
+✅ Atualiza em background automaticamente
+✅ Cache inteligente de assets e dados de API
+✅ Splash screen customizada ao abrir
+✅ Pode rodar em tela cheia (sem barra do browser)
+```
+
+### 21.2 Como o Service Worker Funciona por Dentro
+
+```
+Fluxo NORMAL (sem Service Worker):
+Browser → Request HTTP → Internet → Servidor → Response → Browser renderiza
+
+Fluxo com Service Worker:
+Browser → Request HTTP → Service Worker INTERCEPTA
+                              ↓
+                    Tem no cache? ──── SIM → Retorna do cache (instantâneo!)
+                         │
+                        NÃO
+                         │
+                         ↓
+                    Vai para Internet → Servidor → Response
+                                                      ↓
+                                        Salva no cache + retorna para browser
+```
+
+O Service Worker atua como um **proxy** entre o browser e a rede. Ele intercepta TODA requisição que o app faz e pode decidir: servir do cache, ir para a rede, ou uma combinação dos dois.
+
+```
+┌──────────┐     ┌──────────────────┐     ┌──────────┐
+│  Browser  │ ──→ │  Service Worker   │ ──→ │  Rede /  │
+│  (App)    │ ←── │  (proxy/cache)    │ ←── │ Servidor │
+└──────────┘     └──────────────────┘     └──────────┘
+                        │     ↑
+                        ↓     │
+                  ┌──────────────┐
+                  │  Cache API    │
+                  │  (no browser) │
+                  └──────────────┘
+```
+
+**Ciclo de vida do Service Worker:**
+
+```
+1. INSTALL  → Browser baixa o SW pela primeira vez
+              → SW faz cache dos assets essenciais (app shell)
+              
+2. ACTIVATE → SW antigo é removido, novo assume
+              → Limpa caches antigos
+              
+3. FETCH    → SW intercepta requisições
+              → Decide: cache, rede, ou ambos
+              
+4. UPDATE   → Browser detecta nova versão do SW
+              → Baixa nova versão em background
+              → Aguarda todas as tabs fecharem (ou force update)
+              → Novo SW assume
+```
+
+### 21.3 Setup no Angular
 
 ```bash
 ng add @angular/pwa
 ```
 
-Isso adiciona automaticamente:
-- `ngsw-config.json` (configuração do Service Worker)
-- `manifest.webmanifest` (metadata do app)
-- Ícones padrão
-- Service Worker registration
+Isso gera automaticamente:
+- `ngsw-config.json` — Configuração de cache do Service Worker
+- `manifest.webmanifest` — Metadata do app (nome, ícones, cores)
+- Ícones padrão em `assets/icons/`
+- Registra o Service Worker no `app.module.ts` ou `app.config.ts`
+- Atualiza `index.html` com link para manifest e meta tags
 
-### 21.2 Configuração do Service Worker
+```typescript
+// O que o ng add faz no app.config.ts (standalone):
+import { provideServiceWorker } from '@angular/service-worker';
+
+bootstrapApplication(AppComponent, {
+  providers: [
+    provideServiceWorker('ngsw-worker.js', {
+      enabled: !isDevMode(),           // Só ativa em produção
+      registrationStrategy: 'registerWhenStable:30000'
+      // Registra o SW após app estabilizar ou após 30s (o que vier primeiro)
+    })
+  ]
+});
+
+// OU no AppModule (com módulos):
+ServiceWorkerModule.register('ngsw-worker.js', {
+  enabled: !isDevMode(),
+  registrationStrategy: 'registerWhenStable:30000'
+})
+```
+
+**Estratégias de registro:**
+```
+'registerWhenStable:30000'  → Espera app estabilizar OU 30s (recomendado)
+'registerImmediately'       → Registra no bootstrap (pode atrasar o app)
+```
+
+### 21.4 manifest.webmanifest — Configuração do App
 
 ```json
-// ngsw-config.json
 {
+  "name": "Minha Aplicação Angular",
+  "short_name": "MeuApp",
+  "description": "Descrição do meu app para SEO e instalação",
+  "theme_color": "#1976d2",
+  "background_color": "#fafafa",
+  "display": "standalone",
+  "scope": "/",
+  "start_url": "/",
+  "orientation": "portrait-primary",
+  "icons": [
+    {
+      "src": "assets/icons/icon-72x72.png",
+      "sizes": "72x72",
+      "type": "image/png",
+      "purpose": "maskable any"
+    },
+    {
+      "src": "assets/icons/icon-96x96.png",
+      "sizes": "96x96",
+      "type": "image/png"
+    },
+    {
+      "src": "assets/icons/icon-128x128.png",
+      "sizes": "128x128",
+      "type": "image/png"
+    },
+    {
+      "src": "assets/icons/icon-192x192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "assets/icons/icon-512x512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Novo Pedido",
+      "short_name": "Pedido",
+      "url": "/orders/new",
+      "icons": [{ "src": "assets/icons/shortcut-order.png", "sizes": "96x96" }]
+    }
+  ]
+}
+```
+
+**Opções de `display`:**
+```
+"standalone"   → Parece app nativo (sem barra de URL) — mais usado
+"fullscreen"   → Tela cheia total (sem status bar) — jogos
+"minimal-ui"   → Com barra mínima de navegação
+"browser"      → Abre no browser normal (não faz muito sentido para PWA)
+```
+
+**`purpose: "maskable any"`** — O ícone funciona tanto como ícone normal quanto como "maskable" (recortável em formato adaptativo pelo sistema operacional — círculo no Android, quadrado arredondado no iOS, etc).
+
+### 21.5 ngsw-config.json — Estratégias de Cache (O Mais Importante)
+
+O Angular Service Worker usa dois conceitos de cache: **assetGroups** (arquivos do build) e **dataGroups** (respostas de API).
+
+```json
+{
+  "$schema": "./node_modules/@angular/service-worker/config/schema.json",
   "index": "/index.html",
+  
   "assetGroups": [
     {
-      "name": "app",
+      "name": "app-shell",
       "installMode": "prefetch",
+      "updateMode": "prefetch",
       "resources": {
         "files": [
           "/favicon.ico",
@@ -4571,85 +4744,530 @@ Isso adiciona automaticamente:
       "updateMode": "prefetch",
       "resources": {
         "files": [
-          "/assets/**"
+          "/assets/**",
+          "/*.(png|jpg|jpeg|svg|gif|webp|ico)"
+        ],
+        "urls": [
+          "https://fonts.googleapis.com/**",
+          "https://fonts.gstatic.com/**"
         ]
       }
     }
   ],
+  
   "dataGroups": [
     {
-      "name": "api-performance",
-      "urls": ["/api/products"],
-      "cacheConfig": {
-        "maxSize": 100,
-        "maxAge": "1h",
-        "strategy": "performance"
-      }
-    },
-    {
       "name": "api-freshness",
-      "urls": ["/api/users"],
+      "urls": ["/api/users", "/api/notifications"],
       "cacheConfig": {
         "maxSize": 50,
         "maxAge": "10m",
         "timeout": "5s",
         "strategy": "freshness"
       }
+    },
+    {
+      "name": "api-performance",
+      "urls": ["/api/products", "/api/categories"],
+      "cacheConfig": {
+        "maxSize": 200,
+        "maxAge": "1h",
+        "strategy": "performance"
+      }
+    },
+    {
+      "name": "api-long-cache",
+      "urls": ["/api/config", "/api/static-data"],
+      "cacheConfig": {
+        "maxSize": 20,
+        "maxAge": "7d",
+        "strategy": "performance"
+      }
     }
   ]
 }
 ```
 
-### 21.3 Update Notifications
+**Explicação de cada campo:**
+
+**assetGroups** (arquivos estáticos do build):
+
+| Campo | Significado |
+|-------|------------|
+| `installMode: "prefetch"` | Baixa TODOS os arquivos quando SW instala (app shell — garante offline imediato) |
+| `installMode: "lazy"` | Só baixa quando o browser realmente requisitar (imagens, fontes — não bloqueia install) |
+| `updateMode: "prefetch"` | Quando SW atualiza, baixa versões novas proativamente |
+| `updateMode: "lazy"` | Quando SW atualiza, só baixa quando requisitado |
+| `resources.files` | Padrões glob para arquivos locais |
+| `resources.urls` | URLs externas para cachear (CDNs, fontes do Google, etc) |
+
+**dataGroups** (respostas de API):
+
+| Campo | Significado |
+|-------|------------|
+| `maxSize` | Máximo de entradas no cache |
+| `maxAge` | Tempo de vida no cache (`10m`, `1h`, `7d`) |
+| `timeout` | Tempo máximo de espera pela rede antes de usar cache (só para freshness) |
+| `strategy: "freshness"` | **Rede primeiro** — tenta rede, se falhar ou demorar mais que `timeout`, usa cache |
+| `strategy: "performance"` | **Cache primeiro** — serve do cache se existir e não estiver expirado, senão vai para rede |
+
+**Quando usar cada estratégia:**
+
+```
+freshness (rede primeiro):
+✅ Dados que mudam frequentemente (notificações, perfil do usuário, feed)
+✅ Quando dados frescos são mais importantes que velocidade
+✅ Com timeout: se rede demorar >5s, serve cache (melhor que nada)
+
+performance (cache primeiro):
+✅ Dados que mudam raramente (catálogo de produtos, categorias, config)
+✅ Quando velocidade é mais importante que dados em tempo real
+✅ maxAge controla quando o cache expira e força ida à rede
+```
+
+**Fluxo visual:**
+```
+FRESHNESS (timeout: 5s):
+Request → Tenta rede ──── responde em <5s → Usa rede + atualiza cache
+                    └──── demora >5s → Usa cache (se tiver)
+                    └──── offline → Usa cache (se tiver)
+                    └──── offline + sem cache → Erro
+
+PERFORMANCE (maxAge: 1h):
+Request → Tem cache válido (<1h)? ──── SIM → Serve do cache (instantâneo!)
+                                  └──── NÃO → Vai para rede → Atualiza cache
+```
+
+### 21.6 Notificação de Atualização (Versão Nova Disponível)
+
+Quando você faz deploy de uma nova versão, o Service Worker detecta que os arquivos mudaram. O Angular fornece o `SwUpdate` service para gerenciar isso.
 
 ```typescript
+import { SwUpdate, VersionReadyEvent } from '@angular/service-worker';
+
 @Injectable({ providedIn: 'root' })
 export class PwaUpdateService {
   constructor(
     private swUpdate: SwUpdate,
     private snackbar: MatSnackBar
   ) {
-    if (swUpdate.isEnabled) {
-      // Checar atualizações periodicamente
-      interval(60000).subscribe(() => swUpdate.checkForUpdate());
+    if (!this.swUpdate.isEnabled) return; // SW não ativo (dev mode)
+    
+    this.checkForUpdates();
+    this.listenForUpdates();
+  }
+  
+  // 1. Verificar atualizações periodicamente
+  private checkForUpdates() {
+    // Checa a cada 6 horas
+    interval(6 * 60 * 60 * 1000).pipe(
+      switchMap(() => this.swUpdate.checkForUpdate())
+    ).subscribe(updateFound => {
+      if (updateFound) {
+        console.log('Nova versão encontrada!');
+      }
+    });
+  }
+  
+  // 2. Reagir quando atualização está pronta
+  private listenForUpdates() {
+    this.swUpdate.versionUpdates.pipe(
+      filter((event): event is VersionReadyEvent => event.type === 'VERSION_READY')
+    ).subscribe(event => {
+      console.log(`Versão atual: ${event.currentVersion.hash}`);
+      console.log(`Nova versão:  ${event.latestVersion.hash}`);
       
-      // Notificar quando atualização disponível
-      swUpdate.versionUpdates.pipe(
-        filter((event): event is VersionReadyEvent => event.type === 'VERSION_READY')
-      ).subscribe(() => {
-        const snack = this.snackbar.open('Nova versão disponível!', 'Atualizar');
-        snack.onAction().subscribe(() => {
-          window.location.reload();
-        });
+      this.promptUpdate();
+    });
+  }
+  
+  // 3. Perguntar ao usuário se quer atualizar
+  private promptUpdate() {
+    const snack = this.snackbar.open(
+      'Nova versão disponível!', 
+      'Atualizar',
+      { duration: 0 }  // Não fechar automaticamente
+    );
+    
+    snack.onAction().subscribe(() => {
+      // Ativa a nova versão e recarrega
+      this.swUpdate.activateUpdate().then(() => {
+        window.location.reload();
       });
+    });
+  }
+  
+  // 4. Forçar atualização (sem perguntar)
+  forceUpdate() {
+    this.swUpdate.activateUpdate().then(() => window.location.reload());
+  }
+}
+
+// Injetar no AppComponent para inicializar
+@Component({ ... })
+export class AppComponent {
+  constructor(private pwaUpdate: PwaUpdateService) {} // Basta injetar
+}
+```
+
+**Fluxo de atualização:**
+```
+1. Deploy nova versão no servidor
+2. Usuário abre o app (ou está com app aberto)
+3. SW checa ngsw.json (manifesto de versão gerado no build)
+4. Detecta que os hashes mudaram → nova versão!
+5. Baixa novos arquivos em BACKGROUND (usuário não percebe)
+6. Emite evento VERSION_READY
+7. App mostra notificação "Nova versão disponível"
+8. Usuário clica "Atualizar" → activateUpdate() → reload
+```
+
+### 21.7 Push Notifications
+
+```typescript
+import { SwPush } from '@angular/service-worker';
+
+@Injectable({ providedIn: 'root' })
+export class PushNotificationService {
+  readonly VAPID_PUBLIC_KEY = 'sua-chave-publica-aqui'; // Gerada no backend
+  
+  constructor(
+    private swPush: SwPush,
+    private http: HttpClient
+  ) {}
+  
+  // 1. Pedir permissão e registrar
+  subscribeToNotifications(): Observable<void> {
+    return from(this.swPush.requestSubscription({
+      serverPublicKey: this.VAPID_PUBLIC_KEY
+    })).pipe(
+      switchMap(subscription => {
+        // Envia a subscription para o backend salvar
+        return this.http.post<void>('/api/push-subscriptions', subscription);
+      }),
+      tap(() => console.log('Push notification ativada!')),
+      catchError(err => {
+        if (Notification.permission === 'denied') {
+          console.error('Usuário bloqueou notificações');
+        }
+        return throwError(() => err);
+      })
+    );
+  }
+  
+  // 2. Escutar notificações recebidas
+  listenForNotifications() {
+    // Quando notificação chega e app está aberto
+    this.swPush.messages.subscribe((message: any) => {
+      console.log('Push recebida:', message);
+    });
+    
+    // Quando usuário CLICA na notificação
+    this.swPush.notificationClicks.subscribe(({ action, notification }) => {
+      console.log('Clicou na notificação:', notification);
+      
+      // Navegar baseado na ação/payload
+      if (notification.data?.url) {
+        window.open(notification.data.url);
+      }
+    });
+  }
+  
+  // 3. Cancelar inscrição
+  unsubscribe() {
+    this.swPush.unsubscribe().then(() => {
+      console.log('Push notification desativada');
+    });
+  }
+}
+```
+
+**Fluxo completo de push:**
+```
+1. Frontend: swPush.requestSubscription() → browser gera subscription (endpoint + keys)
+2. Frontend: envia subscription para backend (POST /api/push-subscriptions)
+3. Backend: salva subscription no banco
+4. Quando quiser notificar:
+   Backend: usa web-push library + subscription + VAPID keys → envia para push service
+5. Push service (Google/Mozilla/Apple) → entrega para o Service Worker do browser
+6. Service Worker: mostra notificação nativa do sistema
+7. Usuário clica → swPush.notificationClicks emite → app navega
+```
+
+### 21.8 Detectar Status Online/Offline
+
+```typescript
+@Injectable({ providedIn: 'root' })
+export class ConnectivityService {
+  private onlineSubject = new BehaviorSubject<boolean>(navigator.onLine);
+  
+  isOnline$ = this.onlineSubject.asObservable();
+  
+  constructor() {
+    fromEvent(window, 'online').subscribe(() => this.onlineSubject.next(true));
+    fromEvent(window, 'offline').subscribe(() => this.onlineSubject.next(false));
+  }
+  
+  get isOnline(): boolean {
+    return this.onlineSubject.value;
+  }
+}
+
+// No component
+@Component({
+  template: `
+    @if (!(connectivity.isOnline$ | async)) {
+      <div class="offline-banner" @slideIn>
+        <span>⚠️ Você está offline. Alguns recursos podem não funcionar.</span>
+      </div>
+    }
+    
+    <router-outlet />
+  `
+})
+export class AppComponent {
+  constructor(public connectivity: ConnectivityService) {}
+}
+```
+
+### 21.9 Instalação do PWA (Add to Home Screen)
+
+```typescript
+@Injectable({ providedIn: 'root' })
+export class PwaInstallService {
+  private deferredPrompt: any = null;
+  private installableSubject = new BehaviorSubject<boolean>(false);
+  
+  isInstallable$ = this.installableSubject.asObservable();
+  
+  constructor() {
+    // O browser emite este evento quando o app é elegível para instalação
+    window.addEventListener('beforeinstallprompt', (event: Event) => {
+      event.preventDefault();  // Previne o mini-infobar automático
+      this.deferredPrompt = event;
+      this.installableSubject.next(true);
+    });
+    
+    // Detectar se já foi instalado
+    window.addEventListener('appinstalled', () => {
+      this.deferredPrompt = null;
+      this.installableSubject.next(false);
+      console.log('PWA instalado com sucesso!');
+    });
+  }
+  
+  // Mostrar prompt de instalação customizado
+  async promptInstall(): Promise<boolean> {
+    if (!this.deferredPrompt) return false;
+    
+    this.deferredPrompt.prompt();  // Mostra dialog nativo do browser
+    const result = await this.deferredPrompt.userChoice;
+    
+    this.deferredPrompt = null;
+    this.installableSubject.next(false);
+    
+    return result.outcome === 'accepted';
+  }
+  
+  // Checar se já está rodando como PWA instalada
+  isRunningAsInstalledApp(): boolean {
+    return window.matchMedia('(display-mode: standalone)').matches
+        || (window.navigator as any).standalone === true;  // Safari iOS
+  }
+}
+
+// No component: botão customizado de instalação
+@Component({
+  template: `
+    @if (installService.isInstallable$ | async) {
+      <button class="install-btn" (click)="onInstall()">
+        📲 Instalar App
+      </button>
+    }
+  `
+})
+export class InstallBannerComponent {
+  constructor(public installService: PwaInstallService) {}
+  
+  async onInstall() {
+    const accepted = await this.installService.promptInstall();
+    if (accepted) {
+      this.analytics.track('pwa_installed');
     }
   }
 }
 ```
 
-### 21.4 Offline Capabilities
+**Critérios para o browser oferecer instalação:**
+```
+✅ HTTPS (ou localhost)
+✅ manifest.webmanifest válido com name, icons (192px e 512px), start_url, display
+✅ Service Worker registrado com evento fetch
+✅ Usuário engajado (visitou o site mais de 1x, passou tempo na página)
+```
+
+### 21.10 Strategies de Cache Offline Avançadas
 
 ```typescript
-// Detectar status online/offline
+// Pattern: Queue de operações offline (sync quando voltar online)
 @Injectable({ providedIn: 'root' })
-export class ConnectivityService {
-  isOnline$ = merge(
-    fromEvent(window, 'online').pipe(map(() => true)),
-    fromEvent(window, 'offline').pipe(map(() => false))
-  ).pipe(
-    startWith(navigator.onLine)
-  );
+export class OfflineQueueService {
+  private queue: PendingRequest[] = [];
+  private readonly STORAGE_KEY = 'offline_queue';
+  
+  constructor(
+    private http: HttpClient,
+    private connectivity: ConnectivityService
+  ) {
+    // Carregar fila persistida
+    this.loadQueue();
+    
+    // Quando voltar online, processar a fila
+    this.connectivity.isOnline$.pipe(
+      filter(online => online),
+      switchMap(() => this.processQueue())
+    ).subscribe();
+  }
+  
+  // Encolar operação quando offline
+  enqueue(request: PendingRequest): void {
+    this.queue.push({ ...request, timestamp: Date.now() });
+    this.saveQueue();
+  }
+  
+  // Processar fila quando online
+  private processQueue(): Observable<void> {
+    if (this.queue.length === 0) return of(void 0);
+    
+    const requests = [...this.queue];
+    this.queue = [];
+    this.saveQueue();
+    
+    return from(requests).pipe(
+      concatMap(req => this.executeRequest(req).pipe(
+        catchError(err => {
+          // Se falhar de novo, reencola
+          this.enqueue(req);
+          return of(null);
+        })
+      )),
+      finalize(() => console.log(`Processadas ${requests.length} operações offline`)),
+      map(() => void 0)
+    );
+  }
+  
+  private executeRequest(req: PendingRequest): Observable<any> {
+    switch (req.method) {
+      case 'POST': return this.http.post(req.url, req.body);
+      case 'PUT': return this.http.put(req.url, req.body);
+      case 'DELETE': return this.http.delete(req.url);
+      default: return of(null);
+    }
+  }
+  
+  private saveQueue() {
+    localStorage.setItem(this.STORAGE_KEY, JSON.stringify(this.queue));
+  }
+  
+  private loadQueue() {
+    const saved = localStorage.getItem(this.STORAGE_KEY);
+    this.queue = saved ? JSON.parse(saved) : [];
+  }
 }
 
-// Usar no component
-@Component({
-  template: `
-    @if (!(connectivity.isOnline$ | async)) {
-      <div class="offline-banner">Você está offline</div>
+// Uso: Service que funciona offline
+@Injectable({ providedIn: 'root' })
+export class OrderService {
+  constructor(
+    private http: HttpClient,
+    private offlineQueue: OfflineQueueService,
+    private connectivity: ConnectivityService
+  ) {}
+  
+  createOrder(order: Order): Observable<Order> {
+    if (this.connectivity.isOnline) {
+      return this.http.post<Order>('/api/orders', order);
     }
-  `
-})
+    
+    // Offline: salvar na fila
+    this.offlineQueue.enqueue({
+      method: 'POST',
+      url: '/api/orders',
+      body: order
+    });
+    
+    // Retorna otimisticamente
+    return of({ ...order, id: `temp-${Date.now()}`, status: 'pending_sync' });
+  }
+}
 ```
+
+### 21.11 Testando PWA
+
+```bash
+# 1. Build de produção (SW só funciona em prod)
+ng build --configuration production
+
+# 2. Servir com http-server (simula servidor estático)
+npx http-server -p 8080 -c-1 dist/my-app/browser
+
+# 3. Abrir Chrome DevTools:
+#    - Application tab → Service Workers (ver status, forçar update)
+#    - Application tab → Cache Storage (ver o que está cacheado)
+#    - Application tab → Manifest (ver configuração e testar install)
+#    - Network tab → marcar "Offline" (testar comportamento offline)
+
+# 4. Lighthouse audit (Chrome DevTools → Lighthouse)
+#    - Roda checklist completa de PWA
+#    - Mostra score e o que falta
+```
+
+**Checklist de PWA para produção:**
+```
+□ manifest.webmanifest com todos os ícones (72 a 512px)
+□ Service Worker registrado e funcionando
+□ App funciona offline (pelo menos tela de fallback)
+□ HTTPS em produção
+□ Estratégias de cache configuradas para API
+□ Notificação de atualização implementada
+□ Splash screen e theme_color definidos
+□ Performance: Lighthouse PWA score > 90
+□ Meta tags para iOS: <meta name="apple-mobile-web-app-capable" content="yes">
+□ Push notifications (se aplicável)
+□ Offline queue para operações de escrita (se aplicável)
+```
+
+### 21.12 Limitações e Cuidados
+
+```
+⚠️ iOS Safari:
+- Push notifications só a partir do iOS 16.4 e só para PWAs instaladas
+- Service Worker cache limitado a ~50MB
+- Cache pode ser limpo pelo sistema após ~7 dias sem uso
+- Sem background sync
+- Sem badging API
+
+⚠️ Geral:
+- Service Worker atualiza no máximo a cada 24h (browser limita)
+- Cache Storage tem limite de espaço por browser (~5-10% do disco)
+- Não confundir Service Worker com Web Worker (thread de processamento)
+- SW não tem acesso ao DOM diretamente
+- Primeira visita é sempre online (SW instala após primeira carga)
+```
+
+### 21.13 Perguntas de Entrevista sobre PWA
+
+**P:** "O que é uma PWA e como funciona?"  
+**R:** "É uma web app que usa Service Worker, Web Manifest e HTTPS para oferecer experiência de app nativo. O Service Worker atua como proxy entre o browser e a rede, interceptando requisições e servindo do cache quando offline. O manifest permite instalação na tela inicial. O Angular fornece `@angular/pwa` que gera toda a configuração, e o `ngsw-config.json` define estratégias de cache para assets e dados de API."
+
+**P:** "Qual a diferença entre as estratégias freshness e performance?"  
+**R:** "Freshness (rede primeiro) tenta a rede e só usa cache se falhar ou demorar mais que o timeout — ideal para dados que mudam frequentemente. Performance (cache primeiro) serve do cache se existir e estiver dentro do maxAge — ideal para dados estáveis onde velocidade é prioridade."
+
+**P:** "Como gerencia atualizações do app?"  
+**R:** "O Angular SW compara o hash dos arquivos do build. Quando detecta mudança, baixa a nova versão em background. Usando `SwUpdate.versionUpdates`, escuto o evento `VERSION_READY` e mostro uma notificação ao usuário com opção de atualizar, que chama `activateUpdate()` seguido de `location.reload()`."
+
+**P:** "Como funciona offline?"  
+**R:** "Assets são cacheados na instalação do SW (prefetch) ou no primeiro acesso (lazy). Dados de API são cacheados conforme configuração do dataGroups. Para operações de escrita offline, implemento uma fila de pending requests que é processada com `concatMap` quando a conectividade retorna."
 
 ---
 
