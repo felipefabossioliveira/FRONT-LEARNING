@@ -3876,81 +3876,279 @@ export class AppComponent {
 <a name="20-ssr"></a>
 ## 20. SSR (Server-Side Rendering)
 
-### 20.1 O que é e Por que Usar?
+### 20.1 O que é SSR? (Explicação Profunda)
 
-| Aspecto | SPA (Client-only) | SSR |
-|---------|-------------------|-----|
-| **First Paint** | Lento (baixa JS → executa → renderiza) | Rápido (HTML pronto) |
-| **SEO** | Ruim (crawlers veem HTML vazio) | Excelente |
-| **Social Sharing** | Meta tags não funcionam | Funciona |
-| **TTFB** | Rápido (HTML simples) | Mais lento (servidor renderiza) |
-| **Infraestrutura** | Estática (CDN) | Precisa Node.js |
+**SSR (Server-Side Rendering)** é uma técnica em que o HTML da página é gerado no **servidor** (Node.js) a cada requisição, ao invés de ser montado no browser pelo JavaScript. O servidor executa o código Angular, renderiza os components em HTML puro, e envia esse HTML pronto para o browser.
 
-### 20.2 Setup (Angular 17+)
+**O problema que SSR resolve:**
 
-```bash
-# Novo projeto com SSR
-ng new my-app --ssr
+Em uma SPA (Single Page Application) tradicional, quando o browser faz uma requisição, o servidor retorna um HTML quase vazio — apenas um `<app-root></app-root>` e tags `<script>`. O browser precisa então baixar todo o JavaScript, parsear, executar o framework Angular, montar a árvore de components, fazer chamadas HTTP para buscar dados, e só então renderizar o conteúdo visível. Até tudo isso acontecer, o usuário vê uma tela em branco (ou um spinner).
 
-# Adicionar em projeto existente
-ng add @angular/ssr
+Com SSR, o servidor já faz todo esse trabalho. O HTML que chega no browser já contém o conteúdo renderizado — textos, listas, imagens, tudo visível. O usuário vê o conteúdo imediatamente.
+
+### 20.2 Como Funciona por Dentro (Fluxo Completo)
+
+**Fluxo SPA (sem SSR):**
+```
+1. Browser faz GET /products
+2. Servidor retorna HTML mínimo:
+   <html>
+     <body>
+       <app-root></app-root>      ← Vazio!
+       <script src="main.js">     ← 500KB+ de JS
+     </body>
+   </html>
+3. Browser baixa main.js (500KB-2MB)
+4. Browser parseia e executa JavaScript
+5. Angular inicializa (bootstrap)
+6. Angular monta a árvore de components
+7. ProductListComponent faz HTTP GET /api/products
+8. API retorna dados
+9. Angular renderiza a lista no DOM
+10. Usuário finalmente VÊ o conteúdo       ← 3-8 segundos depois!
+
+Timeline:
+[---download JS---][--parse--][--execute--][--HTTP--][render]
+                                                          ↑ FCP (First Contentful Paint)
+```
+
+**Fluxo SSR:**
+```
+1. Browser faz GET /products
+2. Servidor Node.js recebe a requisição
+3. Servidor executa Angular em memória (sem browser real)
+4. Angular no servidor monta a árvore de components
+5. ProductListComponent faz HTTP GET /api/products (servidor → API, rede local = rápido!)
+6. Angular renderiza tudo em HTML string
+7. Servidor retorna HTML COMPLETO:
+   <html>
+     <body>
+       <app-root>
+         <h1>Produtos</h1>         ← Conteúdo já pronto!
+         <div class="product">
+           <h2>Notebook Dell</h2>
+           <p>R$ 4.500,00</p>
+         </div>
+         <div class="product">
+           <h2>Mouse Logitech</h2>
+           <p>R$ 150,00</p>
+         </div>
+       </app-root>
+       <script src="main.js">
+     </body>
+   </html>
+8. Browser renderiza HTML imediatamente    ← Usuário VÊ o conteúdo em <1 segundo!
+9. Em paralelo, browser baixa e executa JS
+10. Angular "assume" o HTML (hydration)    ← Agora tem interatividade
+
+Timeline:
+[server render][---HTML pronto + visível---]
+               [---download JS em paralelo---][hydration]
+               ↑ FCP (muito mais rápido!)              ↑ TTI (Time to Interactive)
+```
+
+**Ponto-chave para entrevista:** Com SSR, o FCP (First Contentful Paint) é muito mais rápido porque o HTML já vem pronto. Porém, o TTI (Time to Interactive) pode ser similar ao SPA, porque o JavaScript ainda precisa ser baixado e executado para que botões, forms e interações funcionem.
+
+### 20.3 O que Acontece no Servidor (Angular Universal/SSR Engine)
+
+O Angular SSR usa o **Angular Universal** (até Angular 16) ou o **@angular/ssr** (Angular 17+) para executar components no servidor. O mecanismo funciona assim:
+
+```
+┌─────────────────────────────────────────────────────────┐
+│                   Servidor Node.js                       │
+│                                                          │
+│  1. Express recebe requisição (GET /products)            │
+│                    ↓                                     │
+│  2. CommonEngine cria um "browser virtual" em memória    │
+│     (usa Domino - uma implementação de DOM para Node.js) │
+│                    ↓                                     │
+│  3. Angular bootstrapa a app nesse DOM virtual           │
+│     - Cria AppComponent                                  │
+│     - Resolve rotas (Router)                             │
+│     - Instancia ProductListComponent                     │
+│     - Executa ngOnInit → chama HttpClient                │
+│                    ↓                                     │
+│  4. HttpClient faz requisição real para a API            │
+│     (servidor → API = rede interna, muito rápido)        │
+│                    ↓                                     │
+│  5. Dados chegam, Angular renderiza no DOM virtual       │
+│                    ↓                                     │
+│  6. Angular serializa o DOM virtual em string HTML       │
+│                    ↓                                     │
+│  7. Express envia essa string como response              │
+│                                                          │
+└─────────────────────────────────────────────────────────┘
+                           ↓
+                    HTML completo vai
+                    para o browser
 ```
 
 ```typescript
-// server.ts (gerado automaticamente)
+// server.ts - Como o servidor processa cada requisição
 import { CommonEngine } from '@angular/ssr';
 import express from 'express';
+import { dirname, join, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import bootstrap from './src/main.server';
 
 const app = express();
+const serverDistFolder = dirname(fileURLToPath(import.meta.url));
+const browserDistFolder = resolve(serverDistFolder, '../browser');
+const indexHtml = join(serverDistFolder, 'index.server.html');
 const commonEngine = new CommonEngine();
 
-app.get('*', (req, res) => {
-  commonEngine.render({
-    bootstrap: AppServerModule,
-    documentFilePath: indexHtml,
-    url: req.url,
-  }).then(html => res.send(html));
+// Servir arquivos estáticos (JS, CSS, imagens)
+app.use(express.static(browserDistFolder, { maxAge: '1y', index: false }));
+
+// Todas as rotas passam pelo Angular SSR
+app.get('**', (req, res, next) => {
+  commonEngine
+    .render({
+      bootstrap,                    // Entry point do Angular
+      documentFilePath: indexHtml,  // Template HTML base
+      url: req.originalUrl,         // URL que o user acessou
+      publicPath: browserDistFolder,
+      providers: [
+        { provide: 'REQUEST', useValue: req },    // Acesso ao request no Angular
+        { provide: 'RESPONSE', useValue: res },
+      ],
+    })
+    .then((html) => res.send(html))    // Envia HTML renderizado
+    .catch((err) => next(err));
+});
+
+app.listen(4000, () => {
+  console.log('SSR server rodando em http://localhost:4000');
 });
 ```
 
-### 20.3 Cuidados com SSR
+### 20.4 Diferença Entre CSR, SSR, SSG e ISR
+
+| Estratégia | Quando Renderiza | Onde Renderiza | Melhor Para |
+|-----------|-----------------|---------------|-------------|
+| **CSR** (Client-Side) | No browser, após JS carregar | Browser | Dashboards, apps internas |
+| **SSR** (Server-Side) | A cada requisição | Servidor Node.js | E-commerce, conteúdo dinâmico |
+| **SSG** (Static Generation) | No build (1x) | Build pipeline | Blog, docs, landing pages |
+| **ISR** (Incremental Static) | No build + revalida | Servidor + cache | Catálogos com atualização periódica |
+
+```
+CSR:  Build → HTML vazio → Browser monta tudo
+SSR:  Cada request → Servidor renderiza → HTML pronto → Browser hydrate
+SSG:  Build → Gera HTML de cada rota → Deploy estático → Sem servidor
+ISR:  Build → Gera HTML → Serve do cache → Revalida a cada N segundos
+```
+
+### 20.5 Comparação Detalhada
+
+| Aspecto | SPA/CSR | SSR | SSG |
+|---------|---------|-----|-----|
+| **FCP (First Contentful Paint)** | Lento (3-8s) | Rápido (<1s) | Muito rápido (CDN) |
+| **TTI (Time to Interactive)** | = FCP | FCP + hydration | FCP + hydration |
+| **TTFB (Time to First Byte)** | Rápido (HTML pequeno) | Mais lento (servidor renderiza) | Muito rápido (estático) |
+| **SEO** | Ruim (HTML vazio) | Excelente | Excelente |
+| **Social Sharing (OG tags)** | Não funciona | Funciona | Funciona |
+| **Dados dinâmicos** | Sim (API calls) | Sim (fresh a cada request) | Não (dados do build) |
+| **Infraestrutura** | Estática (CDN, S3) | Node.js server | Estática (CDN, S3) |
+| **Custo** | Baixo | Médio-Alto (servidor) | Baixo |
+| **Escalabilidade** | Alta (CDN) | Precisa escalar servidor | Alta (CDN) |
+| **Cache** | Só assets | Pode cachear HTML | 100% cacheável |
+
+### 20.6 Setup (Angular 17+)
+
+```bash
+# Novo projeto já com SSR
+ng new my-app --ssr
+
+# Adicionar SSR em projeto existente
+ng add @angular/ssr
+```
+
+O `ng add @angular/ssr` gera automaticamente:
+- `server.ts` — servidor Express com Angular SSR
+- `src/main.server.ts` — entry point para server-side
+- `src/app/app.config.server.ts` — config do Angular para servidor
+- Atualiza `angular.json` com configurações de build SSR
 
 ```typescript
-import { isPlatformBrowser, isPlatformServer } from '@angular/common';
+// src/app/app.config.server.ts
+import { mergeApplicationConfig, ApplicationConfig } from '@angular/core';
+import { provideServerRendering } from '@angular/platform-server';
+import { appConfig } from './app.config';
+
+const serverConfig: ApplicationConfig = {
+  providers: [
+    provideServerRendering()
+  ]
+};
+
+export const config = mergeApplicationConfig(appConfig, serverConfig);
+```
+
+```typescript
+// src/main.server.ts
+import { bootstrapApplication } from '@angular/platform-browser';
+import { AppComponent } from './app/app.component';
+import { config } from './app/app.config.server';
+
+const bootstrap = () => bootstrapApplication(AppComponent, config);
+export default bootstrap;
+```
+
+### 20.7 Cuidados com SSR (APIs do Browser)
+
+No servidor Node.js, **não existem** `window`, `document`, `localStorage`, `navigator`, `alert`, `setTimeout` (parcial) e outras APIs de browser. Acessar essas APIs no servidor causa crash.
+
+```typescript
+import { isPlatformBrowser, isPlatformServer, DOCUMENT } from '@angular/common';
 import { PLATFORM_ID, inject } from '@angular/core';
 
-export class MyComponent {
+export class MyComponent implements OnInit {
   private platformId = inject(PLATFORM_ID);
+  private document = inject(DOCUMENT);  // Abstração segura para document
   
   ngOnInit() {
-    // ❌ Erro no servidor (window não existe)
+    // ❌ CRASH no servidor! Essas APIs não existem no Node.js:
     window.scrollTo(0, 0);
     localStorage.setItem('key', 'value');
     document.getElementById('el');
+    navigator.geolocation.getCurrentPosition(...);
     
-    // ✅ Verificar plataforma
+    // ✅ Verificar plataforma antes
     if (isPlatformBrowser(this.platformId)) {
       window.scrollTo(0, 0);
       localStorage.setItem('key', 'value');
+      
+      // Inicializar libs que dependem do browser
+      this.initGoogleMaps();
+      this.initAnalytics();
     }
     
-    // ✅ Ou usar afterNextRender (Angular 16+)
+    // ✅ Usar DOCUMENT token (funciona em ambos ambientes)
+    const title = this.document.title;
   }
 }
+```
 
-// afterNextRender - código que só roda no browser APÓS render
+**afterNextRender / afterRender (Angular 16+) — A forma moderna:**
+
+```typescript
+import { afterNextRender, afterRender } from '@angular/core';
+
 export class ChartComponent {
   constructor() {
+    // Roda 1x após o PRIMEIRO render no browser
+    // NUNCA roda no servidor — sem necessidade de if(isPlatformBrowser)
     afterNextRender(() => {
-      // Seguro para acessar DOM, window, etc
+      // Seguro para acessar DOM, window, localStorage, etc
       this.initChart();
+      this.setupResizeObserver();
     });
   }
 }
 
-// afterRender - roda após CADA render no browser
 export class AutoResizeComponent {
   constructor() {
+    // Roda após CADA render no browser (como AfterViewChecked, mas só no browser)
     afterRender(() => {
       this.adjustHeight();
     });
@@ -3958,43 +4156,377 @@ export class AutoResizeComponent {
 }
 ```
 
-### 20.4 Hydration (Angular 16+)
+**Lista completa de APIs que NÃO existem no servidor:**
+
+```
+❌ window         → Use isPlatformBrowser ou afterNextRender
+❌ document       → Use inject(DOCUMENT) ou Renderer2
+❌ localStorage   → Use TransferState ou cookie
+❌ sessionStorage → Use TransferState
+❌ navigator      → Verificar plataforma
+❌ alert/confirm  → Não usar
+❌ requestAnimationFrame → Use afterRender
+❌ IntersectionObserver  → Use afterNextRender
+❌ ResizeObserver → Use afterNextRender
+❌ WebSocket      → Inicializar só no browser
+❌ fetch (global) → Use HttpClient (funciona em ambos)
+```
+
+### 20.8 TransferState — Evitar Requisições Duplicadas
+
+**O problema:** Sem TransferState, a API é chamada 2 vezes — uma no servidor (para gerar HTML) e outra no browser (quando Angular re-inicializa). TransferState permite que o servidor passe dados para o browser, evitando a duplicação.
+
+```
+SEM TransferState:
+Servidor: Angular executa → HTTP GET /api/products → renderiza HTML com dados
+Browser:  Angular re-inicializa → HTTP GET /api/products DE NOVO → re-renderiza
+                                   ↑ Duplicado e desnecessário!
+
+COM TransferState:
+Servidor: Angular executa → HTTP GET /api/products → renderiza HTML → salva dados no HTML
+Browser:  Angular re-inicializa → encontra dados no HTML → usa direto, SEM novo HTTP
+```
 
 ```typescript
-// Hydration permite que o client Angular "assuma" o HTML do servidor
-// ao invés de destruir e recriar tudo
+// Angular 16+ com provideClientHydration: TransferState é AUTOMÁTICO para HttpClient!
+// Basta ativar hydration:
 
-// main.ts
 bootstrapApplication(AppComponent, {
   providers: [
-    provideClientHydration()  // ← Ativa hydration!
+    provideClientHydration(),  // ← Ativa hydration + TransferState automático
+    provideHttpClient()
   ]
 });
 
-// Benefícios:
-// - Não pisca (sem flash of unstyled content)
-// - Preserva estado do DOM
-// - Event listeners são adicionados ao HTML existente
-// - Performance muito melhor que re-render completo
-```
+// O Angular automaticamente:
+// 1. No servidor: faz o HTTP call e embute o resultado no HTML como <script type="application/json">
+// 2. No browser: intercepta o HTTP call e retorna os dados do HTML, sem fazer nova requisição
 
-### 20.5 SSG (Static Site Generation)
+// =============================================================
+// Para dados NÃO-HTTP (custom), usar TransferState manualmente:
+// =============================================================
 
-```typescript
-// Para páginas estáticas (blog, docs)
-// angular.json
-{
-  "prerender": {
-    "routesFile": "routes.txt"  // Lista de rotas para gerar estaticamente
+import { TransferState, makeStateKey } from '@angular/core';
+
+const PRODUCTS_KEY = makeStateKey<Product[]>('products');
+
+@Injectable({ providedIn: 'root' })
+export class ProductService {
+  constructor(
+    private http: HttpClient,
+    private transferState: TransferState,
+    @Inject(PLATFORM_ID) private platformId: Object
+  ) {}
+  
+  getProducts(): Observable<Product[]> {
+    // 1. Verificar se dados já vieram do servidor
+    if (this.transferState.hasKey(PRODUCTS_KEY)) {
+      const products = this.transferState.get(PRODUCTS_KEY, []);
+      this.transferState.remove(PRODUCTS_KEY);  // Limpar para não ficar stale
+      return of(products);
+    }
+    
+    // 2. Se não tem (ou é o servidor), buscar da API
+    return this.http.get<Product[]>('/api/products').pipe(
+      tap(products => {
+        // 3. Se é o servidor, salvar para o browser
+        if (isPlatformServer(this.platformId)) {
+          this.transferState.set(PRODUCTS_KEY, products);
+        }
+      })
+    );
   }
 }
+```
 
-// routes.txt
+**Como os dados são transferidos fisicamente:**
+```html
+<!-- O Angular SSR embute os dados em um script tag no HTML -->
+<html>
+  <body>
+    <app-root>
+      <!-- ... HTML renderizado ... -->
+    </app-root>
+    
+    <!-- TransferState: dados serializados como JSON -->
+    <script id="serverApp-state" type="application/json">
+      {"products": [{"id":1,"name":"Notebook","price":4500}, ...]}
+    </script>
+    
+    <script src="main.js"></script>
+  </body>
+</html>
+<!-- O Angular no browser lê esse JSON antes de fazer qualquer HTTP call -->
+```
+
+### 20.9 Hydration (Angular 16+) — Explicação Detalhada
+
+**O problema antes do Hydration:**
+
+Antes do Angular 16, quando o browser recebia o HTML do SSR e o JavaScript carregava, o Angular **destruía todo o DOM renderizado pelo servidor** e re-criava do zero. Isso causava:
+- Flash/flicker visível (conteúdo sumia e reaparecia)
+- Perda de estado do DOM (scroll position, foco de input, seleção de texto)
+- Re-trigger de animações CSS
+- Desperdício de trabalho (renderizou 2 vezes)
+
+**Como Hydration resolve:**
+
+Com Hydration, o Angular no browser **não destrói o HTML do servidor**. Ao invés disso, ele "caminha" pelo DOM existente, reconhece cada element como correspondente a um component, e **anexa os event listeners e a lógica** ao DOM que já existe.
+
+```
+SEM Hydration (Angular <16):
+Servidor: renderiza HTML → envia
+Browser:  recebe HTML → mostra → carrega JS → DESTRÓI todo o DOM → recria tudo do zero
+                                                ↑ Flash! Usuário vê conteúdo sumir e voltar
+
+COM Hydration (Angular 16+):
+Servidor: renderiza HTML + marca nodes → envia
+Browser:  recebe HTML → mostra → carrega JS → PRESERVA o DOM → anexa listeners
+                                                ↑ Sem flash! Transição invisível
+```
+
+```typescript
+// Ativar hydration
+bootstrapApplication(AppComponent, {
+  providers: [
+    provideClientHydration(
+      withEventReplay(),           // Angular 18+: replay de eventos durante hydration
+      withIncrementalHydration()   // Angular 19+: hydration incremental com @defer
+    )
+  ]
+});
+```
+
+**Event Replay (Angular 18+):**
+
+Se o usuário clicar em um botão ANTES do JavaScript carregar e hydration completar, o clique normalmente seria perdido. Com `withEventReplay()`, o Angular grava esses eventos e os "replaya" assim que hydration termina.
+
+```
+Sem Event Replay:
+Usuário vê botão "Comprar" → clica → nada acontece (JS não carregou) → frustração
+
+Com Event Replay:
+Usuário vê botão "Comprar" → clica → evento é gravado → JS carrega → hydration → evento é replayado → compra funciona!
+```
+
+**Como Hydration funciona por dentro:**
+
+```
+1. Servidor renderiza HTML e adiciona atributos especiais:
+   <div ngh="0">
+     <app-product-list ngh="1">
+       <div ngh="2" ngSkipHydration>...</div>
+     </app-product-list>
+   </div>
+   
+   ngh = "Angular Hydration Node" — identifica qual component corresponde a qual DOM node
+
+2. Servidor embute um mapa de serialização no HTML:
+   <script type="application/json">
+     { "0": { "type": "AppComponent", "children": [1] },
+       "1": { "type": "ProductListComponent", "children": [2] } }
+   </script>
+
+3. Browser carrega JS, Angular lê o mapa:
+   - Encontra <div ngh="0"> → associa ao AppComponent (SEM recriar)
+   - Encontra <app-product-list ngh="1"> → associa ao ProductListComponent (SEM recriar)
+   - Adiciona event listeners (click, input, etc) nos elements existentes
+   
+4. Resultado: DOM permanece intacto, mas agora tem interatividade
+```
+
+**ngSkipHydration — Pular hydration para partes específicas:**
+
+```html
+<!-- Quando um component third-party manipula DOM diretamente (ex: lib de gráfico) -->
+<div ngSkipHydration>
+  <third-party-chart [data]="chartData"></third-party-chart>
+</div>
+<!-- Angular vai destruir e recriar essa parte normalmente -->
+```
+
+### 20.10 SSG (Static Site Generation) — Pre-Rendering
+
+SSG gera HTML estático no momento do build. Diferente do SSR, não precisa de servidor Node.js em runtime — os arquivos HTML são servidos diretamente de um CDN.
+
+```typescript
+// angular.json — configurar pre-rendering
+{
+  "projects": {
+    "my-app": {
+      "architect": {
+        "build": {
+          "configurations": {
+            "production": {
+              "prerender": {
+                "discoverRoutes": true,        // Descobre rotas automaticamente
+                "routesFile": "prerender-routes.txt"  // OU lista manual
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
+```
+
+```
+// prerender-routes.txt — rotas para gerar estaticamente
 /
 /about
+/contact
 /blog/post-1
 /blog/post-2
+/products/1
+/products/2
 ```
+
+```bash
+# Build gera HTML para cada rota
+ng build
+
+# Resultado em dist/:
+dist/my-app/browser/
+├── index.html          ← HTML de /
+├── about/index.html    ← HTML de /about
+├── blog/
+│   ├── post-1/index.html
+│   └── post-2/index.html
+└── products/
+    ├── 1/index.html
+    └── 2/index.html
+
+# Cada arquivo é HTML completo com conteúdo renderizado
+# Pode ser servido por qualquer CDN/servidor estático (Nginx, S3, Cloudflare)
+```
+
+**Quando usar SSG vs SSR:**
+
+```
+SSG (Static):
+✅ Conteúdo que muda raramente (blog, docs, landing pages, FAQ)
+✅ Pode ser servido em CDN (máxima performance e escala)
+✅ Não precisa de Node.js em produção
+❌ Dados ficam estáticos até próximo build
+❌ Não serve para conteúdo personalizado por usuário
+
+SSR (Dynamic):
+✅ Conteúdo que muda a cada request (e-commerce, dashboard, feed)
+✅ Pode ter dados personalizados por usuário/sessão
+✅ SEO com dados sempre frescos
+❌ Precisa de servidor Node.js rodando
+❌ Cada request consome CPU do servidor
+❌ Mais complexo de escalar (precisa load balancer, caching)
+```
+
+### 20.11 Patterns de SSR para Produção
+
+**Cache de SSR responses:**
+```typescript
+// Cache HTML renderizado para evitar re-render a cada request
+import NodeCache from 'node-cache';
+
+const ssrCache = new NodeCache({ stdTTL: 60 }); // 60 segundos
+
+app.get('**', (req, res, next) => {
+  const cacheKey = req.originalUrl;
+  const cached = ssrCache.get<string>(cacheKey);
+  
+  if (cached) {
+    return res.send(cached);  // Serve do cache
+  }
+  
+  commonEngine.render({ ... }).then(html => {
+    // Não cachear páginas que dependem de auth
+    if (!req.headers.cookie?.includes('auth_token')) {
+      ssrCache.set(cacheKey, html);
+    }
+    res.send(html);
+  });
+});
+```
+
+**SEO: Meta tags dinâmicas com SSR:**
+```typescript
+import { Meta, Title } from '@angular/platform-browser';
+
+@Component({ ... })
+export class ProductDetailComponent implements OnInit {
+  constructor(
+    private meta: Meta,
+    private title: Title,
+    private route: ActivatedRoute
+  ) {}
+  
+  ngOnInit() {
+    this.route.data.subscribe(({ product }) => {
+      // Essas tags são renderizadas no HTML do servidor!
+      // Crawlers e social media bots as lêem corretamente
+      this.title.setTitle(`${product.name} | Minha Loja`);
+      this.meta.updateTag({ name: 'description', content: product.description });
+      this.meta.updateTag({ property: 'og:title', content: product.name });
+      this.meta.updateTag({ property: 'og:description', content: product.description });
+      this.meta.updateTag({ property: 'og:image', content: product.image });
+      this.meta.updateTag({ property: 'og:type', content: 'product' });
+    });
+  }
+}
+```
+
+**Lidar com timeouts no servidor:**
+```typescript
+// Se uma API demora muito, o SSR pode travar
+// Implementar timeout para não bloquear o servidor
+
+app.get('**', (req, res, next) => {
+  const renderTimeout = setTimeout(() => {
+    // Fallback: retorna o HTML do CSR (sem dados)
+    res.sendFile(join(browserDistFolder, 'index.html'));
+  }, 5000); // 5 segundos máximo
+  
+  commonEngine.render({ ... }).then(html => {
+    clearTimeout(renderTimeout);
+    res.send(html);
+  }).catch(err => {
+    clearTimeout(renderTimeout);
+    // Fallback para CSR em caso de erro
+    res.sendFile(join(browserDistFolder, 'index.html'));
+  });
+});
+```
+
+### 20.12 Quando NÃO Usar SSR
+
+```
+❌ Apps internas/administrativas (não precisa de SEO)
+❌ Apps atrás de login (crawlers não vão ver o conteúdo de qualquer forma)
+❌ Dashboards com dados 100% dinâmicos/personalizados
+❌ Quando o time não tem experiência com Node.js em produção
+❌ Quando o custo de infraestrutura não justifica
+❌ Apps simples onde performance de CSR já é aceitável
+
+✅ QUANDO USAR SSR:
+✅ E-commerce (SEO é crítico, social sharing de produtos)
+✅ Blogs, portais de conteúdo (SEO + social sharing)
+✅ Landing pages de marketing (performance do first paint)
+✅ Apps que precisam funcionar com JavaScript desabilitado
+✅ Quando Core Web Vitals (LCP, FID, CLS) são KPIs do projeto
+```
+
+### 20.13 Perguntas de Entrevista sobre SSR
+
+**P:** "Explique como SSR funciona no Angular."  
+**R:** "O servidor Node.js executa o código Angular em memória usando um DOM virtual (Domino). A cada requisição, ele bootstrapa a app, resolve a rota, executa os components (incluindo chamadas HTTP), renderiza tudo em uma string HTML, e retorna esse HTML pronto. O browser exibe o conteúdo imediatamente. Depois, o JavaScript carrega e o Angular faz hydration — associa a lógica aos elements DOM que já existem, sem recriar."
+
+**P:** "O que é Hydration?"  
+**R:** "Hydration é o processo onde o Angular no browser 'assume' o HTML gerado pelo servidor. Ao invés de destruir e recriar o DOM (como fazia antes do Angular 16), ele caminha pelo DOM existente, reconhece cada element, e anexa event listeners e reatividade. O resultado é uma transição invisível de HTML estático para app interativa, sem flash ou flicker."
+
+**P:** "O que é TransferState?"  
+**R:** "É o mecanismo que evita requisições HTTP duplicadas. Sem ele, a API seria chamada no servidor (para gerar HTML) e novamente no browser (quando Angular reinicializa). TransferState serializa os dados do servidor em um script tag no HTML, e o Angular no browser lê esses dados ao invés de fazer um novo HTTP call. No Angular 16+, isso é automático quando hydration está ativo."
+
+**P:** "SSR vs SSG, quando usar cada um?"  
+**R:** "SSG gera HTML no build, ideal para conteúdo estático como blog e docs — sem servidor em runtime, servido em CDN. SSR renderiza a cada request, ideal para conteúdo dinâmico como e-commerce — precisa de servidor Node.js mas os dados são sempre frescos. Pode combinar os dois: SSG para páginas estáticas e SSR para páginas dinâmicas."
 
 ---
 
