@@ -1,162 +1,88 @@
 # 🏛️ ARQUITETURAS DE SOFTWARE NO ANGULAR
-## Guia Completo: Do Desenvolvedor ao Arquiteto
+## Guia Prático: Simplificado e Direto ao Ponto
 
-**Autor:** Guia prático para entrevistas Senior e arquitetura de aplicações escaláveis  
-**Versão:** 2025  
-**Objetivo:** Ensinar QUANDO e COMO usar cada arquitetura no Angular
-
----
-
-## 📚 SUMÁRIO
-
-### PARTE 1: FUNDAMENTOS
-1. [Por Que Arquitetura Importa](#parte1-1)
-2. [Evolução Arquitetural: Monolito → Micro Frontends](#parte1-2)
-3. [Princípios SOLID Aplicados](#parte1-3)
-
-### PARTE 2: ARQUITETURAS PRINCIPAIS
-4. [Clean Architecture (Arquitetura Limpa)](#parte2-1)
-5. [DDD (Domain-Driven Design)](#parte2-2)
-6. [Hexagonal Architecture (Ports & Adapters)](#parte2-3)
-7. [Layered Architecture (Arquitetura em Camadas)](#parte2-4)
-8. [CQRS (Command Query Responsibility Segregation)](#parte2-5)
-9. [Event-Driven Architecture](#parte2-6)
-
-### PARTE 3: ARQUITETURAS FRONTEND
-10. [Feature-Sliced Design](#parte3-1)
-11. [Micro Frontends](#parte3-2)
-12. [Module Federation](#parte3-3)
-
-### PARTE 4: PRÁTICA
-13. [Comparação: Quando Usar Cada Arquitetura](#parte4-1)
-14. [Estrutura de Pastas - Apps Reais](#parte4-2)
-15. [Migração Gradual (Strangler Fig Pattern)](#parte4-3)
-16. [Anti-Patterns e Erros Comuns](#parte4-4)
-17. [Checklist do Arquiteto](#parte4-5)
+**Versão:** 2025 - Simplificada  
+**Objetivo:** Saber QUANDO e COMO usar cada arquitetura
 
 ---
 
-<a name="parte1-1"></a>
-# PARTE 1: FUNDAMENTOS
+## 📚 SUMÁRIO RÁPIDO
 
-## 1. POR QUE ARQUITETURA IMPORTA
+**PARTE 1: CONCEITOS BASE**
+- [Por Que Arquitetura Importa](#parte1)
+- [Princípios SOLID em 5 minutos](#solid)
 
-### 1.1 O Cenário Sem Arquitetura
+**PARTE 2: ARQUITETURAS**
+- [Clean Architecture](#clean)
+- [DDD (Domain-Driven Design)](#ddd)
+- [Hexagonal (Ports & Adapters)](#hexagonal)
+- [Layered Architecture](#layered)
+- [CQRS](#cqrs)
+- [Event-Driven](#eventdriven)
+- [Micro Frontends](#microfrontends)
 
-Imagine um e-commerce que começou simples:
+**PARTE 3: NA PRÁTICA**
+- [Tabela de Comparação](#comparacao)
+- [Estruturas de Pasta](#estruturas)
+- [Como Migrar](#migracao)
+- [Checklist de Decisão](#checklist)
+
+---
+
+<a name="parte1"></a>
+# PARTE 1: POR QUE ARQUITETURA IMPORTA
+
+## O Problema Sem Arquitetura
+
+**Exemplo: E-commerce simples**
 
 ```typescript
-// ❌ SEM ARQUITETURA - Tudo misturado
-@Component({
-  selector: 'app-product-list',
-  template: `
-    <div *ngFor="let product of products">
-      <h3>{{ product.name }}</h3>
-      <p>{{ product.price }}</p>
-      <button (click)="addToCart(product)">Adicionar</button>
-    </div>
-  `
-})
-export class ProductListComponent implements OnInit {
+// ❌ TUDO MISTURADO - Component de 500 linhas
+@Component({...})
+export class ProductComponent {
   products: any[] = [];
-  cart: any[] = [];
-  
-  constructor(private http: HttpClient) {}
   
   ngOnInit() {
-    // Lógica HTTP no component
-    this.http.get('https://api.example.com/products').subscribe(data => {
+    // HTTP direto no component
+    this.http.get('https://api.com/products').subscribe(data => {
       this.products = data;
+      localStorage.setItem('cache', JSON.stringify(data)); // LocalStorage aqui
     });
-    
-    // Lê carrinho do localStorage
-    const savedCart = localStorage.getItem('cart');
-    if (savedCart) {
-      this.cart = JSON.parse(savedCart);
-    }
   }
   
   addToCart(product: any) {
-    // Validação no component
-    if (product.stock <= 0) {
-      alert('Produto sem estoque!');
+    if (product.stock <= 0) { // Validação aqui
+      alert('Sem estoque!'); // Alert aqui
       return;
     }
     
-    // Lógica de desconto no component
     let price = product.price;
-    if (this.cart.length > 5) {
-      price = price * 0.9; // 10% desconto
+    if (this.cart.length > 5) { // Regra de negócio aqui
+      price = price * 0.9;
     }
     
-    // Adiciona no carrinho
-    this.cart.push({ ...product, finalPrice: price });
-    
-    // Salva no localStorage
-    localStorage.setItem('cart', JSON.stringify(this.cart));
-    
-    // Atualiza estoque via HTTP
-    this.http.put(`https://api.example.com/products/${product.id}`, {
-      ...product,
-      stock: product.stock - 1
-    }).subscribe();
-    
-    // Analytics
-    console.log('Product added:', product.id);
+    this.http.put('https://api.com/cart', { product }).subscribe(); // HTTP de novo
   }
 }
 ```
 
-**Problemas identificados:**
+**Problemas:**
+- ✗ Impossível testar
+- ✗ Código duplicado em 10 components
+- ✗ Mudou API? Quebrou tudo
+- ✗ Regra de desconto espalhada
 
-| Problema | Impacto | Exemplo |
-|----------|---------|---------|
-| **Alto Acoplamento** | Difícil testar | Component depende de HTTP, localStorage, alert |
-| **Lógica Duplicada** | Código repetido | Validação de estoque copiada em 5 components |
-| **Sem Tipagem** | Bugs em runtime | `any[]` aceita qualquer coisa |
-| **Lógica de Negócio no UI** | Impossível reutilizar | Regra de desconto só funciona nesse component |
-| **Dependência de Detalhes** | Difícil trocar backend | URL hardcoded em 20 lugares |
-| **Violação SRP** | Component gigante | 1 component faz 10 coisas diferentes |
+## A Solução: Separar Responsabilidades
 
-**O que acontece depois de 6 meses:**
+**Mesmo código, mas organizado:**
 
 ```typescript
-// O mesmo component agora tem 800 linhas...
-export class ProductListComponent {
-  // 50 propriedades
-  products: any[];
-  cart: any[];
-  filters: any;
-  sorting: any;
-  pagination: any;
-  // ...
-  
-  // 30 métodos
-  ngOnInit() { /* 100 linhas */ }
-  addToCart() { /* 80 linhas */ }
-  removeFromCart() { /* 60 linhas */ }
-  applyFilters() { /* 120 linhas */ }
-  // ...
-  
-  // Ninguém mais entende esse código
-  // Qualquer mudança quebra algo
-  // Testes? Impossível.
-}
-```
-
-### 1.2 Com Arquitetura - A Transformação
-
-Agora, a mesma funcionalidade com **Clean Architecture**:
-
-```typescript
-// ✅ COM ARQUITETURA
-
-// 1. DOMAIN - Regras de negócio puras
+// 1️⃣ DOMAIN - Regras de negócio
 export class Product {
   constructor(
-    public readonly id: string,
+    public id: string,
     public name: string,
-    public price: Money,
+    public price: number,
     public stock: number
   ) {}
   
@@ -164,1669 +90,2056 @@ export class Product {
     return this.stock > 0;
   }
   
-  decreaseStock(quantity: number): void {
-    if (quantity > this.stock) {
-      throw new InsufficientStockError(this.id, this.stock, quantity);
-    }
-    this.stock -= quantity;
+  applyDiscount(cartSize: number): number {
+    return cartSize > 5 ? this.price * 0.9 : this.price;
   }
 }
 
+// 2️⃣ APPLICATION - Caso de uso
+@Injectable()
+export class AddToCartUseCase {
+  constructor(private repo: ProductRepository) {}
+  
+  execute(productId: string): Observable<void> {
+    return this.repo.getById(productId).pipe(
+      tap(product => {
+        if (!product.hasStock()) {
+          throw new OutOfStockError();
+        }
+      }),
+      switchMap(product => this.repo.addToCart(product))
+    );
+  }
+}
+
+// 3️⃣ INFRASTRUCTURE - Tecnologia
+@Injectable()
+export class ProductHttpRepository implements ProductRepository {
+  getById(id: string): Observable<Product> {
+    return this.http.get(`${this.api}/products/${id}`);
+  }
+}
+
+// 4️⃣ UI - Só apresentação
+@Component({...})
+export class ProductComponent {
+  constructor(private addToCart: AddToCartUseCase) {}
+  
+  onAddClick(id: string) {
+    this.addToCart.execute(id).subscribe({
+      next: () => this.toast.success('Adicionado!'),
+      error: (err) => this.handleError(err)
+    });
+  }
+}
+```
+
+**Ganhos:**
+- ✓ Testável (cada parte isolada)
+- ✓ Reutilizável (use case funciona em CLI, mobile, web)
+- ✓ Manutenível (mudanças localizadas)
+- ✓ Legível (cada arquivo faz uma coisa)
+
+---
+
+<a name="solid"></a>
+# PRINCÍPIOS SOLID - 5 MINUTOS
+
+## S - Single Responsibility (Uma Responsabilidade)
+
+```typescript
+// ❌ Component faz tudo
+export class UserComponent {
+  validateEmail() { ... }    // Validação
+  formatDate() { ... }        // Formatação
+  saveUser() { ... }          // HTTP
+  calculateAge() { ... }      // Lógica
+}
+
+// ✅ Cada classe faz uma coisa
+export class EmailValidator { ... }
+export class DateFormatter { ... }
+export class UserService { ... }
+export class AgeCalculator { ... }
+```
+
+## O - Open/Closed (Aberto para extensão)
+
+```typescript
+// ❌ Precisa modificar código existente
+if (type === 'regular') { ... }
+else if (type === 'premium') { ... }
+// Adicionar novo tipo? Modifica aqui!
+
+// ✅ Adiciona sem modificar
+interface DiscountStrategy {
+  calculate(order: Order): number;
+}
+
+class RegularDiscount implements DiscountStrategy { ... }
+class PremiumDiscount implements DiscountStrategy { ... }
+// Novo tipo? Só cria nova classe!
+```
+
+## L - Liskov Substitution (Substituível)
+
+```typescript
+// ❌ Quebra quando substitui
+abstract class Bird {
+  abstract fly(): void;
+}
+
+class Penguin extends Bird {
+  fly() { throw new Error('Cannot fly!'); } // Quebra!
+}
+
+// ✅ Substituível sem problemas
+abstract class Bird {
+  abstract move(): void;
+}
+
+class Sparrow extends Bird {
+  move() { this.fly(); }
+}
+
+class Penguin extends Bird {
+  move() { this.swim(); }
+}
+```
+
+## I - Interface Segregation (Interfaces específicas)
+
+```typescript
+// ❌ Interface gorda
+interface Repository {
+  findAll(): Observable<T[]>;
+  save(item: T): Observable<T>;
+  delete(id: string): Observable<void>;
+  search(term: string): Observable<T[]>;
+  // ... 10 métodos que nem todos usam
+}
+
+// ✅ Interfaces específicas
+interface Reader<T> {
+  findAll(): Observable<T[]>;
+}
+
+interface Writer<T> {
+  save(item: T): Observable<T>;
+}
+
+interface Searcher<T> {
+  search(term: string): Observable<T[]>;
+}
+
+// Use só o que precisa
+class ReadOnlyService {
+  constructor(private repo: Reader<User>) {}
+}
+```
+
+## D - Dependency Inversion (Dependa de abstrações)
+
+```typescript
+// ❌ Depende de implementação concreta
+class OrderService {
+  constructor(private email: EmailSmtpService) {} // Acoplado!
+}
+
+// ✅ Depende de abstração
+abstract class EmailService {
+  abstract send(to: string, message: string): Observable<void>;
+}
+
+class OrderService {
+  constructor(private email: EmailService) {} // Desacoplado!
+}
+
+// DI injeta implementação
+providers: [
+  { provide: EmailService, useClass: EmailSmtpService }
+]
+```
+
+---
+
+<a name="clean"></a>
+# CLEAN ARCHITECTURE
+
+## Conceito em 1 Minuto
+
+**Ideia:** Separar o que importa (negócio) do que pode mudar (tecnologia).
+
+```
+┌────────────────────────┐
+│  UI (Components)       │ ← Pode trocar Angular por React
+│  ↓ usa                 │
+├────────────────────────┤
+│  Use Cases             │ ← Orquestra a lógica
+│  ↓ usa                 │
+├────────────────────────┤
+│  Domain (Entities)     │ ← Regras de negócio PURAS
+│  ↑ não depende de nada │
+└────────────────────────┘
+```
+
+## Exemplo Prático: TODO App
+
+### 1. Domain (Regras de Negócio)
+
+```typescript
+// domain/todo.entity.ts
+export class Todo {
+  constructor(
+    public id: string,
+    public title: string,
+    public completed: boolean = false,
+    public createdAt: Date = new Date()
+  ) {}
+  
+  // Regra de negócio: título deve ter 3+ caracteres
+  static create(title: string): Todo {
+    if (title.length < 3) {
+      throw new Error('Título muito curto');
+    }
+    return new Todo(crypto.randomUUID(), title);
+  }
+  
+  complete(): void {
+    this.completed = true;
+  }
+  
+  reopen(): void {
+    this.completed = false;
+  }
+}
+```
+
+### 2. Application (Use Cases)
+
+```typescript
+// application/create-todo.usecase.ts
+@Injectable()
+export class CreateTodoUseCase {
+  constructor(private repo: TodoRepository) {}
+  
+  execute(title: string): Observable<Todo> {
+    const todo = Todo.create(title); // Validação na entity!
+    return this.repo.save(todo);
+  }
+}
+
+// application/toggle-todo.usecase.ts
+@Injectable()
+export class ToggleTodoUseCase {
+  constructor(private repo: TodoRepository) {}
+  
+  execute(id: string): Observable<Todo> {
+    return this.repo.findById(id).pipe(
+      map(todo => {
+        todo.completed ? todo.reopen() : todo.complete();
+        return todo;
+      }),
+      switchMap(todo => this.repo.save(todo))
+    );
+  }
+}
+```
+
+### 3. Infrastructure (Implementação)
+
+```typescript
+// infrastructure/todo-localstorage.repository.ts
+@Injectable()
+export class TodoLocalStorageRepository implements TodoRepository {
+  private key = 'todos';
+  
+  findAll(): Observable<Todo[]> {
+    const json = localStorage.getItem(this.key) || '[]';
+    return of(JSON.parse(json));
+  }
+  
+  save(todo: Todo): Observable<Todo> {
+    return this.findAll().pipe(
+      map(todos => {
+        const index = todos.findIndex(t => t.id === todo.id);
+        if (index >= 0) {
+          todos[index] = todo;
+        } else {
+          todos.push(todo);
+        }
+        localStorage.setItem(this.key, JSON.stringify(todos));
+        return todo;
+      })
+    );
+  }
+}
+```
+
+### 4. Presentation (UI)
+
+```typescript
+// presentation/todo-list.component.ts
+@Component({
+  selector: 'app-todo-list',
+  template: `
+    <input #input placeholder="Nova tarefa">
+    <button (click)="add(input.value)">Adicionar</button>
+    
+    <ul>
+      <li *ngFor="let todo of todos$ | async">
+        <input 
+          type="checkbox" 
+          [checked]="todo.completed"
+          (change)="toggle(todo.id)">
+        {{ todo.title }}
+      </li>
+    </ul>
+  `
+})
+export class TodoListComponent {
+  todos$ = this.getTodos.execute();
+  
+  constructor(
+    private getTodos: GetTodosUseCase,
+    private createTodo: CreateTodoUseCase,
+    private toggleTodo: ToggleTodoUseCase
+  ) {}
+  
+  add(title: string): void {
+    this.createTodo.execute(title).subscribe(() => {
+      this.todos$ = this.getTodos.execute();
+    });
+  }
+  
+  toggle(id: string): void {
+    this.toggleTodo.execute(id).subscribe();
+  }
+}
+```
+
+## Estrutura de Pastas
+
+```
+src/app/
+├── core/
+│   ├── domain/
+│   │   ├── entities/
+│   │   │   └── todo.entity.ts
+│   │   └── repositories/
+│   │       └── todo.repository.ts      # Interface
+│   │
+│   └── application/
+│       └── use-cases/
+│           ├── create-todo.usecase.ts
+│           ├── get-todos.usecase.ts
+│           └── toggle-todo.usecase.ts
+│
+├── infrastructure/
+│   └── repositories/
+│       ├── todo-localstorage.repository.ts
+│       └── todo-http.repository.ts
+│
+└── presentation/
+    └── todo-list/
+        └── todo-list.component.ts
+```
+
+## Quando Usar
+
+| ✅ Use quando | ❌ Evite quando |
+|--------------|----------------|
+| Domínio complexo (muitas regras) | CRUD ultra simples |
+| App vai durar 3+ anos | MVP descartável |
+| Time de 10+ devs | 1-2 devs |
+| Múltiplos clientes (web, mobile) | Só web |
+| Precisa trocar framework | Projeto de 1 mês |
+
+---
+
+<a name="ddd"></a>
+# DDD (DOMAIN-DRIVEN DESIGN)
+
+## Conceito em 1 Minuto
+
+**Ideia:** Modelar software igual ao mundo real.
+
+**Princípio:** Fale a mesma língua do negócio (Ubiquitous Language).
+
+## Conceitos-Chave
+
+### 1. Bounded Context (Contexto Delimitado)
+
+Divida domínio grande em pedaços menores.
+
+**Exemplo: E-commerce**
+
+```
+┌─────────────────┐  ┌─────────────────┐  ┌─────────────────┐
+│  CATALOGO       │  │  VENDAS         │  │  ENTREGA        │
+│                 │  │                 │  │                 │
+│  Product        │  │  Order          │  │  Shipment       │
+│  Category       │  │  OrderItem      │  │  Tracking       │
+│  Price          │  │  Payment        │  │  Address        │
+└─────────────────┘  └─────────────────┘  └─────────────────┘
+     ↓                      ↓                      ↓
+  "Produto tem       "Pedido tem           "Envio tem
+   foto e preço"      total e status"       código de rastreio"
+```
+
+**Cada contexto tem sua própria definição de "Product"!**
+
+```typescript
+// Contexto: CATALOGO
+export class Product {
+  id: string;
+  name: string;
+  description: string;
+  price: number;
+  images: string[];
+}
+
+// Contexto: VENDAS (Product é diferente!)
+export class Product {
+  id: string;
+  name: string;
+  price: number; // Só o que importa pra venda
+}
+
+// Contexto: ESTOQUE (Product é diferente de novo!)
+export class Product {
+  id: string;
+  quantity: number;
+  location: string;
+}
+```
+
+### 2. Aggregate (Agregado)
+
+**Ideia:** Grupo de objetos tratados como uma unidade.
+
+**Exemplo: Order (Pedido)**
+
+```typescript
+// Aggregate Root
+export class Order {
+  private items: OrderItem[] = [];
+  private _total: number = 0;
+  
+  // ✅ Adiciona item via Order (mantém consistência)
+  addItem(product: Product, quantity: number): void {
+    const item = new OrderItem(product, quantity);
+    this.items.push(item);
+    this.recalculateTotal(); // Total sempre correto!
+  }
+  
+  // ❌ NUNCA deixa modificar items diretamente
+  getItems(): readonly OrderItem[] {
+    return this.items; // Readonly!
+  }
+  
+  private recalculateTotal(): void {
+    this._total = this.items.reduce((sum, item) => 
+      sum + item.subtotal, 0
+    );
+  }
+}
+
+// Entity dentro do Aggregate
+export class OrderItem {
+  constructor(
+    public product: Product,
+    public quantity: number
+  ) {}
+  
+  get subtotal(): number {
+    return this.product.price * this.quantity;
+  }
+}
+
+// Uso
+const order = new Order();
+order.addItem(product, 2); // ✅ Certo
+order.getItems()[0].quantity = 5; // ❌ Erro! Readonly
+```
+
+### 3. Value Object
+
+**Ideia:** Objeto sem identidade, definido por valores.
+
+```typescript
+// Value Object: Money
 export class Money {
   constructor(
     public readonly amount: number,
     public readonly currency: string
   ) {}
   
-  applyDiscount(percentage: number): Money {
-    return new Money(
-      this.amount * (1 - percentage),
-      this.currency
-    );
-  }
-}
-
-// 2. APPLICATION - Use Case (orquestra lógica)
-@Injectable()
-export class AddProductToCartUseCase {
-  constructor(
-    private productRepo: ProductRepository,
-    private cartRepo: CartRepository,
-    private discountService: DiscountService
-  ) {}
-  
-  execute(productId: string, quantity: number): Observable<Cart> {
-    return this.productRepo.findById(productId).pipe(
-      switchMap(product => {
-        // Valida estoque
-        if (!product.hasStock()) {
-          throw new OutOfStockError(productId);
-        }
-        
-        // Busca carrinho atual
-        return this.cartRepo.getCurrent().pipe(
-          map(cart => ({ product, cart }))
-        );
-      }),
-      switchMap(({ product, cart }) => {
-        // Aplica desconto se aplicável
-        const discount = this.discountService.calculate(cart);
-        const finalPrice = product.price.applyDiscount(discount);
-        
-        // Adiciona item no carrinho
-        const item = new CartItem(product, quantity, finalPrice);
-        cart.addItem(item);
-        
-        // Salva carrinho
-        return this.cartRepo.save(cart);
-      })
-    );
-  }
-}
-
-// 3. INFRASTRUCTURE - Implementação técnica
-@Injectable()
-export class ProductHttpRepository implements ProductRepository {
-  constructor(private http: HttpClient) {}
-  
-  findById(id: string): Observable<Product> {
-    return this.http.get<ProductDTO>(`${this.apiUrl}/products/${id}`).pipe(
-      map(dto => this.mapper.toDomain(dto))
-    );
-  }
-}
-
-// 4. PRESENTATION - UI simples
-@Component({
-  selector: 'app-product-card',
-  template: `
-    <div class="product-card">
-      <h3>{{ product.name }}</h3>
-      <p>{{ product.price.amount | currency }}</p>
-      <button 
-        (click)="onAddToCart()"
-        [disabled]="!product.hasStock() || loading">
-        {{ product.hasStock() ? 'Adicionar' : 'Sem Estoque' }}
-      </button>
-    </div>
-  `
-})
-export class ProductCardComponent {
-  @Input() product!: Product;
-  loading = false;
-  
-  constructor(
-    private addToCart: AddProductToCartUseCase,
-    private toastr: ToastrService
-  ) {}
-  
-  onAddToCart() {
-    this.loading = true;
-    
-    this.addToCart.execute(this.product.id, 1).subscribe({
-      next: () => {
-        this.toastr.success('Produto adicionado!');
-        this.loading = false;
-      },
-      error: (err) => {
-        if (err instanceof OutOfStockError) {
-          this.toastr.error('Produto sem estoque');
-        } else {
-          this.toastr.error('Erro ao adicionar produto');
-        }
-        this.loading = false;
-      }
-    });
-  }
-}
-```
-
-**Benefícios alcançados:**
-
-| Antes | Depois |
-|-------|--------|
-| Component de 800 linhas | Component de 30 linhas |
-| Impossível testar | Cada camada testável isoladamente |
-| Lógica duplicada | Use Case reutilizável em CLI, Mobile, Web |
-| Mudança quebra tudo | Mudanças localizadas |
-| Sem tipagem | Type-safe end-to-end |
-| Acoplado ao Angular | Domain independente de framework |
-
-### 1.3 Arquitetura = Investimento de Longo Prazo
-
-```
-              CUSTO vs BENEFÍCIO ao longo do tempo
-
-Custo
-  ↑
-  │                       ╱ Sem Arquitetura
-  │                     ╱   (custo explode)
-  │                   ╱
-  │                 ╱
-  │               ╱
-  │             ╱
-  │           ╱_____________ Com Arquitetura
-  │         ╱                (custo controlado)
-  │       ╱
-  │     ╱
-  │   ╱
-  │ ╱
-  └──────────────────────────────────→ Tempo
-  0   3m   6m   1a   2a   3a   5a
-  
-  Ponto de Break-even: ~6 meses
-  Após 6 meses: arquitetura compensa
-```
-
-**Quando vale o investimento:**
-
-✅ **SIM, se:**
-- App vai durar 1+ ano
-- Time com 3+ desenvolvedores
-- Domínio complexo (regras de negócio)
-- Alta criticidade (financeiro, saúde)
-- Múltiplos clientes (Web, Mobile, Desktop)
-
-❌ **NÃO, se:**
-- MVP descartável
-- CRUD ultra simples
-- 1 desenvolvedor sozinho
-- Deadline de 2 semanas
-- Protótipo para validação
-
----
-
-<a name="parte1-2"></a>
-## 2. EVOLUÇÃO ARQUITETURAL
-
-### 2.1 Da Bagunça ao Micro Frontend
-
-```
-EVOLUÇÃO TÍPICA DE UMA STARTUP
-
-┌─────────────────────────────────────────────────────┐
-│  FASE 1: MVP (0-6 meses, 1-2 devs)                 │
-│  ┌─────────────┐                                    │
-│  │  Monolito   │  ← Tudo em um AppModule gigante   │
-│  │  Angular    │     Velocidade > Qualidade         │
-│  └─────────────┘                                    │
-└─────────────────────────────────────────────────────┘
-
-┌─────────────────────────────────────────────────────┐
-│  FASE 2: Crescimento (6m-2a, 3-10 devs)            │
-│  ┌─────────────────────────────────┐                │
-│  │  Feature Modules                │                │
-│  │  ┌────────┐  ┌────────┐        │                │
-│  │  │ Users  │  │ Orders │  ...   │                │
-│  │  └────────┘  └────────┘        │                │
-│  └─────────────────────────────────┘                │
-│  ↑ Módulos lazy-loaded                              │
-└─────────────────────────────────────────────────────┘
-
-┌─────────────────────────────────────────────────────┐
-│  FASE 3: Maturidade (2-5a, 10-30 devs)             │
-│  ┌─────────────────────────────────┐                │
-│  │  Clean Architecture + DDD       │                │
-│  │  ┌──────────────────┐           │                │
-│  │  │  Bounded Context │           │                │
-│  │  │  ┌────┐  ┌────┐ │           │                │
-│  │  │  │Ctx1│  │Ctx2│ │ ...       │                │
-│  │  │  └────┘  └────┘ │           │                │
-│  │  └──────────────────┘           │                │
-│  └─────────────────────────────────┘                │
-│  ↑ Domínio rico, regras complexas                   │
-└─────────────────────────────────────────────────────┘
-
-┌─────────────────────────────────────────────────────┐
-│  FASE 4: Scale (5a+, 30+ devs, múltiplos times)    │
-│  ┌──────┐  ┌──────┐  ┌──────┐                      │
-│  │App 1 │  │App 2 │  │App 3 │                      │
-│  │Team A│  │Team B│  │Team C│                      │
-│  └──────┘  └──────┘  └──────┘                      │
-│      ↓         ↓         ↓                          │
-│  ┌────────────────────────────┐                     │
-│  │   Shell App (Module Fed)  │                     │
-│  └────────────────────────────┘                     │
-│  ↑ Micro Frontends, autonomia total                 │
-└─────────────────────────────────────────────────────┘
-```
-
-### 2.2 Tabela de Decisão por Tamanho
-
-| Métrica | Monolito Simples | Modular | Clean/Hexagonal | Micro Frontends |
-|---------|-----------------|---------|-----------------|-----------------|
-| **Devs** | 1-2 | 3-10 | 10-30 | 30+ |
-| **Features** | 1-5 | 5-20 | 20-50 | 50+ |
-| **LOC** | <10k | 10k-50k | 50k-200k | 200k+ |
-| **Complexidade Domínio** | Baixa | Média | Alta | Muito Alta |
-| **Times** | 1 | 1-2 | 2-5 | 5+ |
-| **Deploy** | Monolítico | Monolítico | Monolítico | Independente |
-| **Custo Setup** | Baixo | Médio | Alto | Muito Alto |
-| **Manutenibilidade** | Baixa | Média | Alta | Muito Alta |
-
----
-
-<a name="parte1-3"></a>
-## 3. PRINCÍPIOS SOLID APLICADOS AO ANGULAR
-
-Antes de arquiteturas, precisa dominar SOLID:
-
-### 3.1 S - Single Responsibility Principle
-
-**Um component/service deve ter UMA razão para mudar.**
-
-```typescript
-// ❌ VIOLAÇÃO SRP - Component faz TUDO
-@Component({ /* ... */ })
-export class UserComponent {
-  users: User[] = [];
-  
-  constructor(private http: HttpClient) {}
-  
-  ngOnInit() {
-    // Responsabilidade 1: HTTP
-    this.http.get('/api/users').subscribe();
-  }
-  
-  validateEmail(email: string): boolean {
-    // Responsabilidade 2: Validação
-    return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
-  }
-  
-  formatDate(date: Date): string {
-    // Responsabilidade 3: Formatação
-    return date.toLocaleDateString();
-  }
-  
-  calculateAge(birthDate: Date): number {
-    // Responsabilidade 4: Cálculo
-    const diff = Date.now() - birthDate.getTime();
-    return Math.floor(diff / (1000 * 60 * 60 * 24 * 365));
-  }
-}
-```
-
-```typescript
-// ✅ SRP APLICADO - Cada classe faz UMA coisa
-
-// Service: só HTTP
-@Injectable()
-export class UserHttpService {
-  getUsers(): Observable<User[]> { /* ... */ }
-}
-
-// Validator: só validação
-export class EmailValidator {
-  static isValid(email: string): boolean { /* ... */ }
-}
-
-// Pipe: só formatação
-@Pipe({ name: 'appDate' })
-export class DateFormatPipe {
-  transform(date: Date): string { /* ... */ }
-}
-
-// Domain service: só lógica de negócio
-export class AgeCalculator {
-  calculate(birthDate: Date): number { /* ... */ }
-}
-
-// Component: só orquestração de UI
-@Component({ /* ... */ })
-export class UserComponent {
-  users$ = this.userService.getUsers();
-  
-  constructor(private userService: UserHttpService) {}
-}
-```
-
-**Por que isso importa na arquitetura:**
-- Clean Architecture: cada **camada** tem responsabilidade única
-- DDD: cada **bounded context** tem responsabilidade única
-- Hexagonal: cada **port** tem responsabilidade única
-
-### 3.2 O - Open/Closed Principle
-
-**Aberto para extensão, fechado para modificação.**
-
-```typescript
-// ❌ VIOLAÇÃO OCP - Precisa modificar código existente
-export class DiscountCalculator {
-  calculate(order: Order): number {
-    if (order.customerType === 'regular') {
-      return order.total * 0.05;
-    } else if (order.customerType === 'premium') {
-      return order.total * 0.10;
-    } else if (order.customerType === 'vip') {
-      return order.total * 0.20;
+  add(other: Money): Money {
+    if (this.currency !== other.currency) {
+      throw new Error('Moedas diferentes!');
     }
-    // A cada novo tipo, precisa modificar AQUI
-    return 0;
+    return new Money(this.amount + other.amount, this.currency);
   }
-}
-```
-
-```typescript
-// ✅ OCP APLICADO - Strategy Pattern
-
-// Interface (contrato)
-export interface DiscountStrategy {
-  calculate(order: Order): number;
-}
-
-// Implementações (extensões)
-export class RegularDiscount implements DiscountStrategy {
-  calculate(order: Order): number {
-    return order.total * 0.05;
-  }
-}
-
-export class PremiumDiscount implements DiscountStrategy {
-  calculate(order: Order): number {
-    return order.total * 0.10;
-  }
-}
-
-export class VipDiscount implements DiscountStrategy {
-  calculate(order: Order): number {
-    return order.total * 0.20;
-  }
-}
-
-// Context
-export class DiscountCalculator {
-  constructor(private strategy: DiscountStrategy) {}
   
-  calculate(order: Order): number {
-    return this.strategy.calculate(order);
+  // Value Objects são IMUTÁVEIS
+  equals(other: Money): boolean {
+    return this.amount === other.amount && 
+           this.currency === other.currency;
+  }
+}
+
+// Value Object: Email
+export class Email {
+  private constructor(public readonly value: string) {}
+  
+  static create(email: string): Email {
+    if (!email.includes('@')) {
+      throw new Error('Email inválido');
+    }
+    return new Email(email.toLowerCase());
+  }
+  
+  getDomain(): string {
+    return this.value.split('@')[1];
   }
 }
 
 // Uso
-const calculator = new DiscountCalculator(new PremiumDiscount());
-const discount = calculator.calculate(order);
+const price1 = new Money(100, 'BRL');
+const price2 = new Money(50, 'BRL');
+const total = price1.add(price2); // Novo objeto! Imutável
 
-// Adicionar novo tipo? Só criar nova classe, não modifica nada existente!
-export class GoldDiscount implements DiscountStrategy {
-  calculate(order: Order): number {
-    return order.total * 0.15;
-  }
-}
+const email = Email.create('USER@EXAMPLE.COM');
+console.log(email.value); // user@example.com (normalizado)
 ```
 
-**Aplicação em arquiteturas:**
-- Hexagonal: novos **adapters** sem modificar ports
-- Clean: novos **use cases** sem modificar domain
+### 4. Domain Service
 
-### 3.3 L - Liskov Substitution Principle
-
-**Subtipos devem ser substituíveis por seus tipos base.**
+**Ideia:** Lógica que não pertence a nenhuma entity.
 
 ```typescript
-// ❌ VIOLAÇÃO LSP
-abstract class Bird {
-  abstract fly(): void;
-}
-
-class Sparrow extends Bird {
-  fly(): void {
-    console.log('Flying!');
-  }
-}
-
-class Penguin extends Bird {
-  fly(): void {
-    throw new Error('Penguins cannot fly!'); // Viola contrato!
-  }
-}
-
-// Quebra quando substitui
-function makeBirdFly(bird: Bird) {
-  bird.fly(); // Pode lançar exception!
-}
-```
-
-```typescript
-// ✅ LSP APLICADO
-abstract class Bird {
-  abstract move(): void;
-}
-
-class Sparrow extends Bird {
-  move(): void {
-    this.fly();
-  }
-  
-  private fly(): void {
-    console.log('Flying!');
-  }
-}
-
-class Penguin extends Bird {
-  move(): void {
-    this.swim();
-  }
-  
-  private swim(): void {
-    console.log('Swimming!');
-  }
-}
-
-// Sempre funciona
-function makeBirdMove(bird: Bird) {
-  bird.move(); // Sempre válido!
-}
-```
-
-**Aplicação no Angular:**
-
-```typescript
-// ✅ Repository abstrato
-export abstract class UserRepository {
-  abstract findById(id: string): Observable<User>;
-}
-
-// Implementações são substituíveis
-export class UserHttpRepository extends UserRepository {
-  findById(id: string): Observable<User> {
-    return this.http.get<User>(`/api/users/${id}`);
-  }
-}
-
-export class UserMockRepository extends UserRepository {
-  findById(id: string): Observable<User> {
-    return of({ id, name: 'Mock User', email: 'mock@test.com' });
-  }
-}
-
-// Uso: QUALQUER implementação funciona
+// Domain Service: Transfer entre contas
 @Injectable()
-export class GetUserUseCase {
-  constructor(private repo: UserRepository) {}
-  
-  execute(id: string): Observable<User> {
-    return this.repo.findById(id); // Sempre funciona!
+export class MoneyTransferService {
+  transfer(from: Account, to: Account, amount: Money): void {
+    // Lógica que envolve DUAS entities
+    from.withdraw(amount);
+    to.deposit(amount);
+    
+    // Poderia ter regras complexas aqui
+    if (amount.amount > 10000) {
+      this.notifyCompliance(from, to, amount);
+    }
   }
 }
 ```
 
-### 3.4 I - Interface Segregation Principle
-
-**Muitas interfaces específicas > Uma interface genérica.**
+## Exemplo Completo: Blog
 
 ```typescript
-// ❌ VIOLAÇÃO ISP - Interface "gorda"
-export interface UserRepository {
-  // CRUD completo forçado
-  findById(id: string): Observable<User>;
-  findAll(): Observable<User[]>;
-  save(user: User): Observable<User>;
-  delete(id: string): Observable<void>;
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// BOUNDED CONTEXT: Publicação
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+// Value Objects
+export class Slug {
+  private constructor(public readonly value: string) {}
   
-  // Métodos específicos que nem todos usam
-  findByEmail(email: string): Observable<User>;
-  findByRole(role: string): Observable<User[]>;
-  searchByName(name: string): Observable<User[]>;
-  updatePassword(id: string, password: string): Observable<void>;
-  sendWelcomeEmail(id: string): Observable<void>;
-}
-
-// Implementação forçada a ter tudo, mesmo que não use
-export class UserReadOnlyRepository implements UserRepository {
-  // Precisa implementar métodos que não usa!
-  save(user: User): Observable<User> {
-    throw new Error('Read-only repository!');
-  }
-  
-  delete(id: string): Observable<void> {
-    throw new Error('Read-only repository!');
-  }
-  
-  // ... implementações vazias
-}
-```
-
-```typescript
-// ✅ ISP APLICADO - Interfaces segregadas
-
-export interface UserReader {
-  findById(id: string): Observable<User>;
-  findAll(): Observable<User[]>;
-}
-
-export interface UserWriter {
-  save(user: User): Observable<User>;
-  delete(id: string): Observable<void>;
-}
-
-export interface UserSearcher {
-  searchByName(name: string): Observable<User[]>;
-  findByEmail(email: string): Observable<User>;
-}
-
-// Implementações específicas
-export class UserReadRepository implements UserReader {
-  findById(id: string): Observable<User> { /* ... */ }
-  findAll(): Observable<User[]> { /* ... */ }
-  // Só implementa o que precisa!
-}
-
-export class UserFullRepository implements UserReader, UserWriter, UserSearcher {
-  // Implementa tudo porque precisa
-}
-
-// Use cases dependem só do que precisam
-@Injectable()
-export class GetUserUseCase {
-  constructor(private repo: UserReader) {} // Só leitura!
-  
-  execute(id: string): Observable<User> {
-    return this.repo.findById(id);
+  static fromTitle(title: string): Slug {
+    const slug = title
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-|-$/g, '');
+    return new Slug(slug);
   }
 }
 
-@Injectable()
-export class CreateUserUseCase {
-  constructor(private repo: UserWriter) {} // Só escrita!
+export class Content {
+  constructor(public readonly text: string) {
+    if (text.length < 100) {
+      throw new Error('Post muito curto');
+    }
+  }
   
-  execute(user: User): Observable<User> {
-    return this.repo.save(user);
+  wordCount(): number {
+    return this.text.split(/\s+/).length;
   }
 }
-```
 
-### 3.5 D - Dependency Inversion Principle
-
-**Dependa de abstrações, não de implementações concretas.**
-
-```typescript
-// ❌ VIOLAÇÃO DIP - Depende de implementação concreta
-@Injectable()
-export class OrderService {
-  // Acoplado a EmailSmtpService específico
-  constructor(private emailService: EmailSmtpService) {}
+// Aggregate Root
+export class Post {
+  private _status: 'draft' | 'published' | 'archived' = 'draft';
+  private _comments: Comment[] = [];
   
-  createOrder(order: Order): Observable<Order> {
-    return this.saveOrder(order).pipe(
-      tap(() => this.emailService.sendOrderConfirmation(order))
+  constructor(
+    public readonly id: string,
+    public readonly authorId: string,
+    public title: string,
+    public content: Content,
+    public slug: Slug,
+    private publishedAt?: Date
+  ) {}
+  
+  // Regra de negócio
+  publish(): void {
+    if (this._status === 'published') {
+      throw new Error('Já publicado');
+    }
+    
+    this._status = 'published';
+    this.publishedAt = new Date();
+  }
+  
+  // Aggregate controla seus filhos
+  addComment(author: string, text: string): void {
+    if (this._status !== 'published') {
+      throw new Error('Só posts publicados aceitam comentários');
+    }
+    
+    const comment = new Comment(
+      crypto.randomUUID(),
+      this.id,
+      author,
+      text
     );
+    
+    this._comments.push(comment);
   }
-}
-
-// Problemas:
-// - Não pode trocar implementação facilmente
-// - Difícil testar (precisa mockar EmailSmtpService)
-// - Acoplamento alto
-```
-
-```typescript
-// ✅ DIP APLICADO - Depende de abstração
-
-// Abstração (interface/abstract class)
-export abstract class EmailService {
-  abstract sendOrderConfirmation(order: Order): Observable<void>;
-}
-
-// Implementações concretas
-export class EmailSmtpService extends EmailService {
-  sendOrderConfirmation(order: Order): Observable<void> {
-    return this.smtpClient.send(/* ... */);
-  }
-}
-
-export class EmailMockService extends EmailService {
-  sendOrderConfirmation(order: Order): Observable<void> {
-    console.log('Mock: enviaria email para', order.customerEmail);
-    return of(void 0);
-  }
-}
-
-// Service depende de ABSTRAÇÃO
-@Injectable()
-export class OrderService {
-  constructor(private emailService: EmailService) {} // Abstração!
   
-  createOrder(order: Order): Observable<Order> {
-    return this.saveOrder(order).pipe(
-      tap(() => this.emailService.sendOrderConfirmation(order))
-    );
+  getComments(): readonly Comment[] {
+    return this._comments;
   }
 }
 
-// DI injeta implementação
-providers: [
-  { provide: EmailService, useClass: EmailSmtpService }
-  // Fácil trocar: useClass: EmailMockService
-]
+// Entity (parte do Aggregate)
+export class Comment {
+  constructor(
+    public readonly id: string,
+    public readonly postId: string,
+    public readonly author: string,
+    public readonly text: string,
+    public readonly createdAt: Date = new Date()
+  ) {}
+}
+
+// Domain Service
+@Injectable()
+export class PublishingService {
+  canUserPublish(user: User, post: Post): boolean {
+    // Lógica de autorização
+    return user.id === post.authorId || user.role === 'admin';
+  }
+}
+
+// Repository Interface
+export abstract class PostRepository {
+  abstract save(post: Post): Observable<Post>;
+  abstract findBySlug(slug: Slug): Observable<Post>;
+  abstract findPublished(): Observable<Post[]>;
+}
 ```
 
-**Aplicação nas arquiteturas:**
-- **Clean Architecture:** Domain depende de interfaces, Infrastructure implementa
-- **Hexagonal:** Ports são abstrações, Adapters são implementações
-- **DDD:** Domain services dependem de repository interfaces
+## Estrutura de Pastas DDD
+
+```
+src/app/
+├── bounded-contexts/
+│   ├── catalog/                    # Contexto: Catálogo
+│   │   ├── domain/
+│   │   │   ├── product.entity.ts
+│   │   │   ├── category.vo.ts
+│   │   │   └── product.repository.ts
+│   │   ├── application/
+│   │   │   └── list-products.usecase.ts
+│   │   └── infrastructure/
+│   │       └── product-http.repository.ts
+│   │
+│   ├── sales/                      # Contexto: Vendas
+│   │   ├── domain/
+│   │   │   ├── order.aggregate.ts
+│   │   │   ├── order-item.entity.ts
+│   │   │   └── money.vo.ts
+│   │   └── ...
+│   │
+│   └── shipping/                   # Contexto: Entrega
+│       └── ...
+│
+└── shared/                         # Compartilhado entre contextos
+    ├── kernel/
+    │   ├── entity.base.ts
+    │   └── value-object.base.ts
+    └── infrastructure/
+        └── http.service.ts
+```
+
+## Quando Usar DDD
+
+| ✅ Use quando | ❌ Evite quando |
+|--------------|----------------|
+| Domínio complexo e rico | CRUD simples |
+| Regras de negócio mudam muito | Lógica trivial |
+| Time tem conhecimento do domínio | Desenvolvedor solo |
+| Precisa de Ubiquitous Language | Deadline apertado |
+| Múltiplos bounded contexts | App pequeno |
 
 ---
 
-<a name="parte2-1"></a>
-# PARTE 2: ARQUITETURAS PRINCIPAIS
+<a name="hexagonal"></a>
+# HEXAGONAL ARCHITECTURE (PORTS & ADAPTERS)
 
-## 4. CLEAN ARCHITECTURE (ARQUITETURA LIMPA)
+## Conceito em 1 Minuto
 
-### 4.1 Conceito e História
-
-**Criador:** Robert C. Martin (Uncle Bob), 2012  
-**Livro:** "Clean Architecture: A Craftsman's Guide to Software Structure and Design"
-
-**Princípio Central:** **Dependency Rule**
-
-> Dependências de código devem apontar APENAS PARA DENTRO, em direção às políticas de alto nível.
+**Ideia:** Core isolado, comunicação via "portas".
 
 ```
-┌─────────────────────────────────────────────────────────┐
-│  FRAMEWORKS & DRIVERS (Camada 4 - Mais Externa)       │
-│  Angular, HTTP, Database, UI, Devices                  │
-│                                                         │
-│  ┌───────────────────────────────────────────────────┐ │
-│  │  INTERFACE ADAPTERS (Camada 3)                   │ │
-│  │  Controllers, Gateways, Presenters               │ │
-│  │                                                   │ │
-│  │  ┌─────────────────────────────────────────────┐ │ │
-│  │  │  APPLICATION BUSINESS RULES (Camada 2)     │ │ │
-│  │  │  Use Cases, Interactors                    │ │ │
-│  │  │                                             │ │ │
-│  │  │  ┌───────────────────────────────────────┐ │ │ │
-│  │  │  │ ENTERPRISE BUSINESS RULES (Camada 1) │ │ │ │
-│  │  │  │ Entities, Domain Models               │ │ │ │
-│  │  │  │           (CORE)                      │ │ │ │
-│  │  │  └───────────────────────────────────────┘ │ │ │
-│  │  │               ↑                             │ │ │
-│  │  │               │  Dependências               │ │ │
-│  │  │               │  apontam                    │ │ │
-│  │  │               │  para dentro                │ │ │
-│  │  └─────────────────────────────────────────────┘ │ │
-│  │                                                   │ │
-│  └───────────────────────────────────────────────────┘ │
-│                                                         │
-└─────────────────────────────────────────────────────────┘
+        ┌──────────────────────┐
+        │   ADAPTERS (OUT)     │
+        │   - HTTP Repository  │
+        │   - Email Service    │
+        └──────────┬───────────┘
+                   │
+        ┌──────────▼───────────┐
+        │    PORTS (OUT)       │  ← Interfaces
+        │    - IRepository     │
+        │    - INotification   │
+        └──────────┬───────────┘
+                   │
+        ┌──────────▼───────────┐
+        │       CORE           │  ← Lógica de negócio
+        │    (Use Cases)       │
+        └──────────┬───────────┘
+                   │
+        ┌──────────▼───────────┐
+        │    PORTS (IN)        │  ← Interfaces
+        │    - IAddUser        │
+        └──────────┬───────────┘
+                   │
+        ┌──────────▼───────────┐
+        │   ADAPTERS (IN)      │
+        │   - REST Controller  │
+        │   - GraphQL Resolver │
+        └──────────────────────┘
 ```
 
-**Características:**
+## Exemplo Prático: User Registration
 
-1. **Independência de Frameworks:** Domain não conhece Angular, React, Vue
-2. **Testabilidade:** Lógica de negócio testável sem UI, DB, frameworks
-3. **Independência de UI:** UI é detail, pode trocar facilmente
-4. **Independência de Database:** MySQL, MongoDB, PostgreSQL são details
-5. **Independência de Agentes Externos:** Domain não conhece APIs externas
-
-### 4.2 Camadas Detalhadas
-
-#### **Camada 1: Enterprise Business Rules (Entities)**
-
-**O que é:** Regras de negócio críticas da empresa, válidas em QUALQUER aplicação.
-
-**Características:**
-- Não muda se mudar UI ou DB
-- Lógica pura, sem dependências externas
-- Modela conceitos do domínio
-
-**Exemplo: Sistema Bancário**
+### 1. Core (Lógica)
 
 ```typescript
-// core/domain/entities/account.entity.ts
-
-export enum AccountType {
-  CHECKING = 'CHECKING',
-  SAVINGS = 'SAVINGS',
-  INVESTMENT = 'INVESTMENT'
-}
-
-export enum AccountStatus {
-  ACTIVE = 'ACTIVE',
-  BLOCKED = 'BLOCKED',
-  CLOSED = 'CLOSED'
-}
-
-export class Account {
+// core/register-user.usecase.ts
+export class RegisterUserUseCase {
   constructor(
-    public readonly id: AccountId,
-    public readonly customerId: CustomerId,
-    public readonly accountNumber: string,
-    public readonly type: AccountType,
-    private _balance: Money,
-    private _status: AccountStatus,
-    private _transactions: Transaction[] = []
+    private userRepo: IUserRepository,        // Port OUT
+    private emailService: IEmailService,      // Port OUT
+    private passwordHasher: IPasswordHasher   // Port OUT
   ) {}
   
-  // ═══════════════════════════════════════════════════════════
-  // REGRAS DE NEGÓCIO (INVARIANTS)
-  // Essas regras SÃO a empresa, não podem ser violadas
-  // ═══════════════════════════════════════════════════════════
-  
-  /**
-   * Regra: Conta precisa de saldo mínimo para transferência
-   */
-  transfer(amount: Money, toAccount: Account): void {
-    this.ensureIsActive();
-    this.ensureHasSufficientFunds(amount);
+  async execute(input: RegisterUserInput): Promise<User> {
+    // Valida
+    if (await this.userRepo.existsByEmail(input.email)) {
+      throw new Error('Email já cadastrado');
+    }
     
-    // Saque da conta origem
-    this.withdraw(amount, `Transfer to ${toAccount.accountNumber}`);
+    // Hash da senha
+    const hashedPassword = await this.passwordHasher.hash(input.password);
     
-    // Depósito na conta destino  
-    toAccount.deposit(amount, `Transfer from ${this.accountNumber}`);
-  }
-  
-  /**
-   * Regra: Saque não pode exceder saldo disponível
-   */
-  withdraw(amount: Money, description: string): void {
-    this.ensureIsActive();
-    this.ensureHasSufficientFunds(amount);
-    
-    const transaction = new Transaction(
-      TransactionId.generate(),
-      TransactionType.WITHDRAWAL,
-      amount,
-      description,
-      new Date()
+    // Cria usuário
+    const user = new User(
+      crypto.randomUUID(),
+      input.name,
+      input.email,
+      hashedPassword
     );
     
-    this._balance = this._balance.subtract(amount);
-    this._transactions.push(transaction);
-  }
-  
-  /**
-   * Regra: Depósito não pode ser negativo
-   */
-  deposit(amount: Money, description: string): void {
-    this.ensureIsActive();
+    // Salva
+    await this.userRepo.save(user);
     
-    if (amount.amount <= 0) {
-      throw new InvalidAmountError('Deposit amount must be positive');
-    }
+    // Envia email
+    await this.emailService.sendWelcome(user.email, user.name);
     
-    const transaction = new Transaction(
-      TransactionId.generate(),
-      TransactionType.DEPOSIT,
-      amount,
-      description,
-      new Date()
-    );
-    
-    this._balance = this._balance.add(amount);
-    this._transactions.push(transaction);
-  }
-  
-  /**
-   * Regra: Conta poupança tem rendimento automático
-   */
-  applyInterest(rate: number): void {
-    if (this.type !== AccountType.SAVINGS) {
-      throw new InvalidOperationError('Only savings accounts earn interest');
-    }
-    
-    const interest = this._balance.multiply(rate);
-    this.deposit(interest, `Interest ${rate * 100}%`);
-  }
-  
-  /**
-   * Regra: Conta bloqueada não permite operações
-   */
-  block(reason: string): void {
-    if (this._status === AccountStatus.CLOSED) {
-      throw new InvalidOperationError('Cannot block closed account');
-    }
-    
-    this._status = AccountStatus.BLOCKED;
-    // Poderia emitir domain event aqui
-  }
-  
-  close(): void {
-    if (this._balance.amount !== 0) {
-      throw new InvalidOperationError('Cannot close account with balance');
-    }
-    
-    this._status = AccountStatus.CLOSED;
-  }
-  
-  // ═══════════════════════════════════════════════════════════
-  // GETTERS (encapsulamento)
-  // ═══════════════════════════════════════════════════════════
-  
-  get balance(): Money {
-    return this._balance; // Retorna cópia, não referência mutável
-  }
-  
-  get status(): AccountStatus {
-    return this._status;
-  }
-  
-  get transactions(): ReadonlyArray<Transaction> {
-    return this._transactions; // ReadonlyArray previne mutação externa
-  }
-  
-  isActive(): boolean {
-    return this._status === AccountStatus.ACTIVE;
-  }
-  
-  // ═══════════════════════════════════════════════════════════
-  // VALIDAÇÕES PRIVADAS (helpers)
-  // ═══════════════════════════════════════════════════════════
-  
-  private ensureIsActive(): void {
-    if (!this.isActive()) {
-      throw new AccountNotActiveError(this.id.value, this._status);
-    }
-  }
-  
-  private ensureHasSufficientFunds(amount: Money): void {
-    if (this._balance.amount < amount.amount) {
-      throw new InsufficientFundsError(
-        this.id.value,
-        this._balance.amount,
-        amount.amount
-      );
-    }
-  }
-}
-
-// Value Objects relacionados
-export class Money {
-  constructor(
-    public readonly amount: number,
-    public readonly currency: string = 'BRL'
-  ) {
-    if (amount < 0) {
-      throw new InvalidAmountError('Amount cannot be negative');
-    }
-  }
-  
-  add(other: Money): Money {
-    this.ensureSameCurrency(other);
-    return new Money(this.amount + other.amount, this.currency);
-  }
-  
-  subtract(other: Money): Money {
-    this.ensureSameCurrency(other);
-    return new Money(this.amount - other.amount, this.currency);
-  }
-  
-  multiply(factor: number): Money {
-    return new Money(this.amount * factor, this.currency);
-  }
-  
-  private ensureSameCurrency(other: Money): void {
-    if (this.currency !== other.currency) {
-      throw new CurrencyMismatchError(this.currency, other.currency);
-    }
-  }
-  
-  equals(other: Money): boolean {
-    return this.amount === other.amount && this.currency === other.currency;
-  }
-}
-
-// Domain Errors
-export class DomainError extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = this.constructor.name;
-  }
-}
-
-export class InsufficientFundsError extends DomainError {
-  constructor(
-    public readonly accountId: string,
-    public readonly currentBalance: number,
-    public readonly requestedAmount: number
-  ) {
-    super(
-      `Insufficient funds in account ${accountId}. ` +
-      `Balance: ${currentBalance}, Requested: ${requestedAmount}`
-    );
-  }
-}
-
-export class AccountNotActiveError extends DomainError {
-  constructor(
-    public readonly accountId: string,
-    public readonly status: AccountStatus
-  ) {
-    super(`Account ${accountId} is ${status}, not ACTIVE`);
+    return user;
   }
 }
 ```
 
-**Por que esta camada é especial:**
-- ✅ **Zero dependências:** Não importa Angular, RxJS, nada
-- ✅ **Testável 100%:** Testes unitários puros, sem mocks
-- ✅ **Reutilizável:** Pode usar em Node.js, React, Vue
-- ✅ **Duradoura:** Não muda quando framework muda
-
-#### **Camada 2: Application Business Rules (Use Cases)**
-
-**O que é:** Orquestração de lógica de negócio específica da aplicação.
-
-**Características:**
-- Implementa casos de uso específicos do sistema
-- Orquestra entities e services
-- Depende de interfaces (repositories), não implementações
-- Independente de frameworks
-
-**Exemplo: Transfer Money Use Case**
+### 2. Ports (Interfaces)
 
 ```typescript
-// application/use-cases/transfer-money.usecase.ts
-
-import { Injectable } from '@angular/core';
-import { Observable, forkJoin } from 'rxjs';
-import { map, switchMap } from 'rxjs/operators';
-import { AccountRepository } from '@core/domain/repositories/account.repository';
-import { AccountId } from '@core/domain/value-objects/account-id.vo';
-import { Money } from '@core/domain/value-objects/money.vo';
-import { TransferMoneyCommand, TransferMoneyResult } from './transfer-money.dto';
-
-/**
- * Use Case: Transferir dinheiro entre contas
- * 
- * Fluxo:
- * 1. Busca conta origem e destino
- * 2. Valida se ambas existem e estão ativas
- * 3. Executa transferência (lógica na entity)
- * 4. Persiste ambas as contas
- * 5. Retorna resultado
- */
-@Injectable({
-  providedIn: 'root'
-})
-export class TransferMoneyUseCase {
-  constructor(
-    private accountRepository: AccountRepository
-    // Depende de INTERFACE, não implementação
-  ) {}
-  
-  execute(command: TransferMoneyCommand): Observable<TransferMoneyResult> {
-    const fromAccountId = AccountId.create(command.fromAccountId);
-    const toAccountId = AccountId.create(command.toAccountId);
-    const amount = new Money(command.amount, command.currency);
-    
-    // 1. Busca ambas as contas em paralelo
-    return forkJoin({
-      fromAccount: this.accountRepository.findById(fromAccountId),
-      toAccount: this.accountRepository.findById(toAccountId)
-    }).pipe(
-      // 2. Valida existência
-      map(({ fromAccount, toAccount }) => {
-        if (!fromAccount) {
-          throw new AccountNotFoundError(fromAccountId.value);
-        }
-        if (!toAccount) {
-          throw new AccountNotFoundError(toAccountId.value);
-        }
-        return { fromAccount, toAccount };
-      }),
-      
-      // 3. Executa transferência (lógica na entity!)
-      map(({ fromAccount, toAccount }) => {
-        fromAccount.transfer(amount, toAccount);
-        // Validações acontecem DENTRO da entity
-        // Se der erro, exception é lançada
-        return { fromAccount, toAccount };
-      }),
-      
-      // 4. Persiste ambas as contas
-      switchMap(({ fromAccount, toAccount }) => 
-        forkJoin({
-          savedFrom: this.accountRepository.save(fromAccount),
-          savedTo: this.accountRepository.save(toAccount)
-        })
-      ),
-      
-      // 5. Retorna resultado
-      map(({ savedFrom, savedTo }) => ({
-        success: true,
-        fromAccountBalance: savedFrom.balance.amount,
-        toAccountBalance: savedTo.balance.amount,
-        transactionDate: new Date()
-      }))
-    );
-  }
+// ports/out/user-repository.interface.ts
+export interface IUserRepository {
+  save(user: User): Promise<User>;
+  findById(id: string): Promise<User | null>;
+  existsByEmail(email: string): Promise<boolean>;
 }
 
-// DTOs (Data Transfer Objects)
-export interface TransferMoneyCommand {
-  fromAccountId: string;
-  toAccountId: string;
-  amount: number;
-  currency: string;
+// ports/out/email-service.interface.ts
+export interface IEmailService {
+  sendWelcome(to: string, name: string): Promise<void>;
 }
 
-export interface TransferMoneyResult {
-  success: boolean;
-  fromAccountBalance: number;
-  toAccountBalance: number;
-  transactionDate: Date;
+// ports/out/password-hasher.interface.ts
+export interface IPasswordHasher {
+  hash(password: string): Promise<string>;
+  verify(password: string, hash: string): Promise<boolean>;
+}
+
+// ports/in/register-user.interface.ts
+export interface IRegisterUser {
+  execute(input: RegisterUserInput): Promise<User>;
 }
 ```
 
-**Outro Use Case: Create Account**
+### 3. Adapters OUT (Infraestrutura)
 
 ```typescript
-// application/use-cases/create-account.usecase.ts
-
-@Injectable({
-  providedIn: 'root'
-})
-export class CreateAccountUseCase {
-  constructor(
-    private accountRepository: AccountRepository,
-    private customerRepository: CustomerRepository,
-    private accountNumberGenerator: AccountNumberGenerator
-  ) {}
-  
-  execute(command: CreateAccountCommand): Observable<CreateAccountResult> {
-    const customerId = CustomerId.create(command.customerId);
-    
-    return this.customerRepository.findById(customerId).pipe(
-      // Valida que customer existe
-      map(customer => {
-        if (!customer) {
-          throw new CustomerNotFoundError(customerId.value);
-        }
-        return customer;
-      }),
-      
-      // Gera número de conta único
-      switchMap(customer => 
-        this.accountNumberGenerator.generate().pipe(
-          map(accountNumber => ({ customer, accountNumber }))
-        )
-      ),
-      
-      // Cria entity Account
-      map(({ customer, accountNumber }) => {
-        const account = new Account(
-          AccountId.generate(),
-          customer.id,
-          accountNumber,
-          command.type,
-          Money.zero(),
-          AccountStatus.ACTIVE
-        );
-        return account;
-      }),
-      
-      // Persiste
-      switchMap(account => this.accountRepository.save(account)),
-      
-      // Retorna DTO
-      map(account => ({
-        accountId: account.id.value,
-        accountNumber: account.accountNumber,
-        type: account.type,
-        initialBalance: account.balance.amount
-      }))
-    );
-  }
-}
-```
-
-**Características dos Use Cases:**
-- ✅ **Uma responsabilidade:** Cada use case faz UMA coisa
-- ✅ **Orquestração:** Coordena entities, repositories, domain services
-- ✅ **Independente de framework:** Usa RxJS, mas não Angular específico
-- ✅ **Testável:** Mocka repositories, testa lógica isolada
-
-#### **Camada 3: Interface Adapters**
-
-**O que é:** Converte dados entre formato do domain e formato externo (API, UI).
-
-**Componentes:**
-- **Controllers:** Recebem requests (no Angular, são os components)
-- **Presenters:** Formatam dados para UI
-- **Gateways:** Implementam repositories (HTTP, LocalStorage)
-- **Mappers:** Convertem DTOs ↔ Entities
-
-**Exemplo: Repository Implementation**
-
-```typescript
-// infrastructure/repositories/account-http.repository.ts
-
-import { Injectable } from '@angular/core';
-import { HttpClient } from '@angular/common/http';
-import { Observable } from 'rxjs';
-import { map } from 'rxjs/operators';
-import { AccountRepository } from '@core/domain/repositories/account.repository';
-import { Account, AccountType, AccountStatus } from '@core/domain/entities/account.entity';
-import { AccountId } from '@core/domain/value-objects/account-id.vo';
-import { Money } from '@core/domain/value-objects/money.vo';
-import { environment } from '@environments/environment';
-
-// DTO - estrutura que vem do backend
-interface AccountDTO {
-  id: string;
-  customer_id: string;
-  account_number: string;
-  type: 'CHECKING' | 'SAVINGS' | 'INVESTMENT';
-  balance: number;
-  currency: string;
-  status: 'ACTIVE' | 'BLOCKED' | 'CLOSED';
-  transactions: TransactionDTO[];
-}
-
-interface TransactionDTO {
-  id: string;
-  type: 'DEPOSIT' | 'WITHDRAWAL';
-  amount: number;
-  description: string;
-  created_at: string;
-}
-
-@Injectable({
-  providedIn: 'root'
-})
-export class AccountHttpRepository implements AccountRepository {
-  private apiUrl = `${environment.apiUrl}/accounts`;
-  
+// adapters/out/user-http.repository.ts
+@Injectable()
+export class UserHttpRepository implements IUserRepository {
   constructor(private http: HttpClient) {}
   
-  findById(id: AccountId): Observable<Account> {
-    return this.http.get<AccountDTO>(`${this.apiUrl}/${id.value}`).pipe(
-      map(dto => this.mapDtoToEntity(dto))
+  save(user: User): Promise<User> {
+    return firstValueFrom(
+      this.http.post<User>('/api/users', user)
     );
   }
   
-  findByCustomerId(customerId: CustomerId): Observable<Account[]> {
-    return this.http.get<AccountDTO[]>(`${this.apiUrl}?customer=${customerId.value}`).pipe(
-      map(dtos => dtos.map(dto => this.mapDtoToEntity(dto)))
+  findById(id: string): Promise<User | null> {
+    return firstValueFrom(
+      this.http.get<User>(`/api/users/${id}`).pipe(
+        catchError(() => of(null))
+      )
     );
   }
   
-  save(account: Account): Observable<Account> {
-    const dto = this.mapEntityToDto(account);
-    
-    if (account.id.value) {
-      // Update
-      return this.http.put<AccountDTO>(`${this.apiUrl}/${account.id.value}`, dto).pipe(
-        map(dto => this.mapDtoToEntity(dto))
-      );
-    } else {
-      // Create
-      return this.http.post<AccountDTO>(this.apiUrl, dto).pipe(
-        map(dto => this.mapDtoToEntity(dto))
-      );
-    }
-  }
-  
-  delete(id: AccountId): Observable<void> {
-    return this.http.delete<void>(`${this.apiUrl}/${id.value}`);
-  }
-  
-  // ═══════════════════════════════════════════════════════════
-  // MAPPERS - Convertem DTO ↔ Entity
-  // ═══════════════════════════════════════════════════════════
-  
-  /**
-   * Converte DTO do backend para Entity de domínio
-   */
-  private mapDtoToEntity(dto: AccountDTO): Account {
-    const transactions = dto.transactions.map(t => new Transaction(
-      TransactionId.create(t.id),
-      t.type as TransactionType,
-      new Money(t.amount, dto.currency),
-      t.description,
-      new Date(t.created_at)
-    ));
-    
-    return new Account(
-      AccountId.create(dto.id),
-      CustomerId.create(dto.customer_id),
-      dto.account_number,
-      dto.type as AccountType,
-      new Money(dto.balance, dto.currency),
-      dto.status as AccountStatus,
-      transactions
+  existsByEmail(email: string): Promise<boolean> {
+    return firstValueFrom(
+      this.http.get<boolean>(`/api/users/exists?email=${email}`)
     );
   }
+}
+
+// adapters/out/email-smtp.service.ts
+@Injectable()
+export class EmailSmtpService implements IEmailService {
+  async sendWelcome(to: string, name: string): Promise<void> {
+    await fetch('/api/email/send', {
+      method: 'POST',
+      body: JSON.stringify({
+        to,
+        subject: `Bem-vindo, ${name}!`,
+        template: 'welcome'
+      })
+    });
+  }
+}
+
+// adapters/out/bcrypt-hasher.service.ts
+@Injectable()
+export class BcryptHasher implements IPasswordHasher {
+  async hash(password: string): Promise<string> {
+    const salt = await bcrypt.genSalt(10);
+    return bcrypt.hash(password, salt);
+  }
   
-  /**
-   * Converte Entity de domínio para DTO do backend
-   */
-  private mapEntityToDto(account: Account): AccountDTO {
-    return {
-      id: account.id.value,
-      customer_id: account.customerId.value,
-      account_number: account.accountNumber,
-      type: account.type,
-      balance: account.balance.amount,
-      currency: account.balance.currency,
-      status: account.status,
-      transactions: account.transactions.map(t => ({
-        id: t.id.value,
-        type: t.type,
-        amount: t.amount.amount,
-        description: t.description,
-        created_at: t.createdAt.toISOString()
-      }))
-    };
+  async verify(password: string, hash: string): Promise<boolean> {
+    return bcrypt.compare(password, hash);
   }
 }
 ```
 
-**Por que Mappers são essenciais:**
-- ✅ **Desacoplamento:** Domain não conhece formato do backend
-- ✅ **Flexibilidade:** Backend muda? Só atualiza mapper
-- ✅ **Type Safety:** Conversão explícita e tipada
-
-#### **Camada 4: Frameworks & Drivers (UI)**
-
-**O que é:** Angular components, routing, templates.
-
-**Exemplo: Component (Presentation)**
+### 4. Adapters IN (UI/Controllers)
 
 ```typescript
-// presentation/pages/accounts/transfer/transfer.component.ts
-
+// adapters/in/register-user.component.ts
 @Component({
-  selector: 'app-transfer',
+  selector: 'app-register',
   template: `
-    <div class="transfer-page">
-      <h2>Transferência entre Contas</h2>
-      
-      <form [formGroup]="form" (ngSubmit)="onSubmit()">
-        <div class="form-group">
-          <label>Conta Origem</label>
-          <select formControlName="fromAccountId">
-            <option *ngFor="let account of accounts$ | async" [value]="account.id">
-              {{ account.accountNumber }} - {{ account.balance | currency }}
-            </option>
-          </select>
-        </div>
-        
-        <div class="form-group">
-          <label>Conta Destino</label>
-          <input formControlName="toAccountId" placeholder="Número da conta">
-        </div>
-        
-        <div class="form-group">
-          <label>Valor</label>
-          <input formControlName="amount" type="number" step="0.01">
-        </div>
-        
-        <button 
-          type="submit" 
-          [disabled]="form.invalid || loading">
-          {{ loading ? 'Processando...' : 'Transferir' }}
-        </button>
-      </form>
-      
-      <div *ngIf="result" class="result success">
-        <h3>✓ Transferência realizada!</h3>
-        <p>Novo saldo: {{ result.fromAccountBalance | currency }}</p>
-      </div>
-      
-      <div *ngIf="error" class="result error">
-        <h3>✗ Erro na transferência</h3>
-        <p>{{ error }}</p>
-      </div>
-    </div>
+    <form [formGroup]="form" (ngSubmit)="onSubmit()">
+      <input formControlName="name" placeholder="Nome">
+      <input formControlName="email" placeholder="Email">
+      <input formControlName="password" type="password">
+      <button type="submit">Cadastrar</button>
+    </form>
   `
 })
-export class TransferComponent implements OnInit {
+export class RegisterUserComponent {
   form = this.fb.group({
-    fromAccountId: ['', Validators.required],
-    toAccountId: ['', Validators.required],
-    amount: [0, [Validators.required, Validators.min(0.01)]]
+    name: ['', Validators.required],
+    email: ['', [Validators.required, Validators.email]],
+    password: ['', Validators.required]
   });
-  
-  accounts$!: Observable<Account[]>;
-  loading = false;
-  result?: TransferMoneyResult;
-  error?: string;
   
   constructor(
     private fb: FormBuilder,
-    private transferMoney: TransferMoneyUseCase,
-    private getAccounts: GetCustomerAccountsUseCase,
-    private customerId: string // Injetado de algum lugar
+    private registerUser: IRegisterUser  // Port IN!
   ) {}
   
-  ngOnInit() {
-    this.accounts$ = this.getAccounts.execute(this.customerId);
+  onSubmit(): void {
+    this.registerUser.execute(this.form.value).then(
+      user => alert(`Cadastrado: ${user.name}`),
+      err => alert(`Erro: ${err.message}`)
+    );
+  }
+}
+```
+
+### 5. DI (Conecta tudo)
+
+```typescript
+// app.config.ts
+export const appConfig: ApplicationConfig = {
+  providers: [
+    // Ports IN
+    { provide: IRegisterUser, useClass: RegisterUserUseCase },
+    
+    // Ports OUT
+    { provide: IUserRepository, useClass: UserHttpRepository },
+    { provide: IEmailService, useClass: EmailSmtpService },
+    { provide: IPasswordHasher, useClass: BcryptHasher },
+  ]
+};
+```
+
+## Estrutura de Pastas
+
+```
+src/app/
+├── core/
+│   └── use-cases/
+│       └── register-user.usecase.ts
+│
+├── ports/
+│   ├── in/
+│   │   └── register-user.interface.ts
+│   └── out/
+│       ├── user-repository.interface.ts
+│       ├── email-service.interface.ts
+│       └── password-hasher.interface.ts
+│
+├── adapters/
+│   ├── in/
+│   │   └── register-user.component.ts
+│   └── out/
+│       ├── user-http.repository.ts
+│       ├── email-smtp.service.ts
+│       └── bcrypt-hasher.service.ts
+│
+└── domain/
+    └── user.entity.ts
+```
+
+## Vantagens
+
+1. **Testável:** Troca adapters por mocks
+2. **Flexível:** Muda implementação sem tocar no core
+3. **Isolado:** Core não conhece Angular, HTTP, etc
+
+## Quando Usar
+
+| ✅ Use quando | ❌ Evite quando |
+|--------------|----------------|
+| Precisa trocar infraestrutura | App simples |
+| Múltiplas integrações (REST, GraphQL) | Só uma API |
+| Testabilidade crítica | Projeto pequeno |
+
+---
+
+<a name="layered"></a>
+# LAYERED ARCHITECTURE (ARQUITETURA EM CAMADAS)
+
+## Conceito
+
+**Ideia:** Camadas empilhadas, cada uma com responsabilidade específica.
+
+```
+┌─────────────────────────┐
+│  PRESENTATION           │ ← Components, Pages
+├─────────────────────────┤
+│  APPLICATION            │ ← Services, Use Cases
+├─────────────────────────┤
+│  DOMAIN                 │ ← Entities, Business Logic
+├─────────────────────────┤
+│  INFRASTRUCTURE         │ ← HTTP, Database, APIs
+└─────────────────────────┘
+
+Regra: Camada só conhece camada abaixo
+```
+
+## Exemplo: E-commerce
+
+```typescript
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// LAYER 1: DOMAIN
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+export class Product {
+  constructor(
+    public id: string,
+    public name: string,
+    public price: number
+  ) {}
+}
+
+export class Cart {
+  private items: CartItem[] = [];
+  
+  add(product: Product, quantity: number): void {
+    this.items.push(new CartItem(product, quantity));
   }
   
-  onSubmit() {
-    if (this.form.invalid) return;
+  getTotal(): number {
+    return this.items.reduce((sum, item) => 
+      sum + (item.product.price * item.quantity), 0
+    );
+  }
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// LAYER 2: INFRASTRUCTURE
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+@Injectable()
+export class ProductApiService {
+  constructor(private http: HttpClient) {}
+  
+  getAll(): Observable<Product[]> {
+    return this.http.get<Product[]>('/api/products');
+  }
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// LAYER 3: APPLICATION
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+@Injectable()
+export class CartService {
+  private cart = new Cart();
+  
+  constructor(private productApi: ProductApiService) {}
+  
+  addProduct(productId: string): Observable<void> {
+    return this.productApi.getById(productId).pipe(
+      tap(product => this.cart.add(product, 1))
+    );
+  }
+  
+  getCartTotal(): number {
+    return this.cart.getTotal();
+  }
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// LAYER 4: PRESENTATION
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+@Component({...})
+export class ProductListComponent {
+  products$ = this.productApi.getAll();
+  
+  constructor(
+    private productApi: ProductApiService,
+    private cart: CartService
+  ) {}
+  
+  addToCart(id: string): void {
+    this.cart.addProduct(id).subscribe();
+  }
+}
+```
+
+## Estrutura de Pastas
+
+```
+src/app/
+├── presentation/
+│   ├── pages/
+│   └── components/
+│
+├── application/
+│   └── services/
+│
+├── domain/
+│   ├── entities/
+│   └── interfaces/
+│
+└── infrastructure/
+    ├── http/
+    └── storage/
+```
+
+## Quando Usar
+
+**Arquitetura mais simples**, boa para começar.
+
+| ✅ Use quando | ❌ Evite quando |
+|--------------|----------------|
+| Projeto médio | App muito complexo (prefira Clean/Hexagonal) |
+| Time conhece MVC | Precisa isolar domínio completamente |
+| Quer simplicidade | Múltiplos clientes (prefira Clean) |
+
+---
+
+<a name="cqrs"></a>
+# CQRS (COMMAND QUERY RESPONSIBILITY SEGREGATION)
+
+## Conceito em 1 Minuto
+
+**Ideia:** Separar leitura (Query) de escrita (Command).
+
+```
+          WRITE                    READ
+       (Commands)               (Queries)
+            ↓                       ↓
+    ┌──────────────┐       ┌──────────────┐
+    │  Write Model │       │  Read Model  │
+    │   (normalize)│       │  (denormalize)│
+    └──────┬───────┘       └───────┬──────┘
+           │                       │
+           ↓                       ↓
+    ┌──────────────┐       ┌──────────────┐
+    │  Write DB    │──────>│   Read DB    │
+    │  (PostgreSQL)│ sync  │  (MongoDB)   │
+    └──────────────┘       └──────────────┘
+```
+
+## Exemplo: Blog
+
+### Commands (Escrita)
+
+```typescript
+// commands/create-post.command.ts
+export class CreatePostCommand {
+  constructor(
+    public title: string,
+    public content: string,
+    public authorId: string
+  ) {}
+}
+
+@Injectable()
+export class CreatePostHandler {
+  constructor(
+    private writeRepo: PostWriteRepository,
+    private eventBus: EventBus
+  ) {}
+  
+  async execute(cmd: CreatePostCommand): Promise<void> {
+    const post = new Post(
+      crypto.randomUUID(),
+      cmd.title,
+      cmd.content,
+      cmd.authorId
+    );
     
-    this.loading = true;
-    this.result = undefined;
-    this.error = undefined;
+    await this.writeRepo.save(post);
     
-    const command: TransferMoneyCommand = {
-      fromAccountId: this.form.value.fromAccountId!,
-      toAccountId: this.form.value.toAccountId!,
-      amount: this.form.value.amount!,
-      currency: 'BRL'
+    // Publica evento
+    this.eventBus.publish(new PostCreatedEvent(post));
+  }
+}
+
+// commands/publish-post.command.ts
+export class PublishPostCommand {
+  constructor(public postId: string) {}
+}
+
+@Injectable()
+export class PublishPostHandler {
+  async execute(cmd: PublishPostCommand): Promise<void> {
+    const post = await this.writeRepo.findById(cmd.postId);
+    post.publish();
+    await this.writeRepo.save(post);
+    
+    this.eventBus.publish(new PostPublishedEvent(post));
+  }
+}
+```
+
+### Queries (Leitura)
+
+```typescript
+// queries/get-post.query.ts
+export class GetPostQuery {
+  constructor(public slug: string) {}
+}
+
+@Injectable()
+export class GetPostHandler {
+  constructor(private readRepo: PostReadRepository) {}
+  
+  async execute(query: GetPostQuery): Promise<PostDTO> {
+    // Read Model já vem desnormalizado!
+    return this.readRepo.findBySlug(query.slug);
+  }
+}
+
+// queries/list-posts.query.ts
+export class ListPostsQuery {
+  constructor(
+    public page: number,
+    public pageSize: number
+  ) {}
+}
+
+@Injectable()
+export class ListPostsHandler {
+  constructor(private readRepo: PostReadRepository) {}
+  
+  async execute(query: ListPostsQuery): Promise<PostDTO[]> {
+    return this.readRepo.findAll(query.page, query.pageSize);
+  }
+}
+```
+
+### Models Diferentes
+
+```typescript
+// Write Model (normalizado)
+export class Post {
+  constructor(
+    public id: string,
+    public title: string,
+    public content: string,
+    public authorId: string,
+    public status: 'draft' | 'published' = 'draft'
+  ) {}
+  
+  publish(): void {
+    if (this.status === 'published') {
+      throw new Error('Já publicado');
+    }
+    this.status = 'published';
+  }
+}
+
+// Read Model (desnormalizado)
+export interface PostDTO {
+  id: string;
+  title: string;
+  content: string;
+  author: {              // Dados do autor já inclusos!
+    id: string;
+    name: string;
+    avatar: string;
+  };
+  commentsCount: number; // Contador pré-calculado!
+  publishedAt: Date;
+}
+```
+
+### Event Sourcing (Opcional)
+
+```typescript
+// Sincroniza Write → Read
+@Injectable()
+export class PostEventHandler {
+  constructor(private readRepo: PostReadRepository) {}
+  
+  @EventListener(PostCreatedEvent)
+  async onPostCreated(event: PostCreatedEvent): Promise<void> {
+    // Atualiza Read Model
+    const dto: PostDTO = {
+      id: event.post.id,
+      title: event.post.title,
+      content: event.post.content,
+      author: await this.getAuthorData(event.post.authorId),
+      commentsCount: 0,
+      publishedAt: null
     };
     
-    this.transferMoney.execute(command).subscribe({
-      next: (result) => {
-        this.result = result;
-        this.loading = false;
-        this.form.reset();
+    await this.readRepo.save(dto);
+  }
+  
+  @EventListener(PostPublishedEvent)
+  async onPostPublished(event: PostPublishedEvent): Promise<void> {
+    await this.readRepo.updateStatus(event.post.id, 'published');
+  }
+}
+```
+
+## Estrutura de Pastas
+
+```
+src/app/
+├── commands/
+│   ├── create-post.command.ts
+│   ├── publish-post.command.ts
+│   └── handlers/
+│
+├── queries/
+│   ├── get-post.query.ts
+│   ├── list-posts.query.ts
+│   └── handlers/
+│
+├── write-model/
+│   ├── entities/
+│   └── repositories/
+│
+├── read-model/
+│   ├── dtos/
+│   └── repositories/
+│
+└── events/
+    ├── post-created.event.ts
+    └── handlers/
+```
+
+## Quando Usar
+
+| ✅ Use quando | ❌ Evite quando |
+|--------------|----------------|
+| Leitura >> Escrita | CRUD equilibrado |
+| Precisa performance de leitura | App simples |
+| Modelos de leitura/escrita muito diferentes | Consistência imediata obrigatória |
+| Auditoria/Event Sourcing | Complexidade não justifica |
+
+---
+
+<a name="eventdriven"></a>
+# EVENT-DRIVEN ARCHITECTURE
+
+## Conceito
+
+**Ideia:** Componentes se comunicam via eventos, não chamadas diretas.
+
+```
+┌──────────────┐         ┌──────────────┐
+│  Component A │ ──────> │  Event Bus   │
+└──────────────┘ emite   └──────┬───────┘
+                                │
+                         ┌──────▼───────┐
+                         │  Component B │ escuta
+                         └──────────────┘
+                         ┌──────────────┐
+                         │  Component C │ escuta
+                         └──────────────┘
+```
+
+## Exemplo Simples: Notificações
+
+```typescript
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// EVENTS
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+export class UserRegisteredEvent {
+  constructor(
+    public userId: string,
+    public email: string,
+    public name: string
+  ) {}
+}
+
+export class OrderPlacedEvent {
+  constructor(
+    public orderId: string,
+    public userId: string,
+    public total: number
+  ) {}
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// EVENT BUS (RxJS)
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+@Injectable({ providedIn: 'root' })
+export class EventBus {
+  private subject = new Subject<any>();
+  
+  publish<T>(event: T): void {
+    this.subject.next(event);
+  }
+  
+  on<T>(eventType: new (...args: any[]) => T): Observable<T> {
+    return this.subject.pipe(
+      filter(event => event instanceof eventType)
+    );
+  }
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// PUBLISHERS (Quem emite eventos)
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+@Injectable()
+export class AuthService {
+  constructor(private eventBus: EventBus) {}
+  
+  register(name: string, email: string): void {
+    const userId = crypto.randomUUID();
+    
+    // Salva usuário...
+    
+    // Publica evento
+    this.eventBus.publish(new UserRegisteredEvent(
+      userId,
+      email,
+      name
+    ));
+  }
+}
+
+@Injectable()
+export class OrderService {
+  constructor(private eventBus: EventBus) {}
+  
+  placeOrder(userId: string, items: any[]): void {
+    const orderId = crypto.randomUUID();
+    const total = this.calculateTotal(items);
+    
+    // Salva pedido...
+    
+    // Publica evento
+    this.eventBus.publish(new OrderPlacedEvent(
+      orderId,
+      userId,
+      total
+    ));
+  }
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// SUBSCRIBERS (Quem escuta eventos)
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+@Injectable()
+export class EmailNotificationService {
+  constructor(private eventBus: EventBus) {
+    this.listen();
+  }
+  
+  private listen(): void {
+    // Escuta UserRegisteredEvent
+    this.eventBus.on(UserRegisteredEvent).subscribe(event => {
+      this.sendWelcomeEmail(event.email, event.name);
+    });
+    
+    // Escuta OrderPlacedEvent
+    this.eventBus.on(OrderPlacedEvent).subscribe(event => {
+      this.sendOrderConfirmation(event.orderId);
+    });
+  }
+  
+  private sendWelcomeEmail(email: string, name: string): void {
+    console.log(`Enviando email de boas-vindas para ${email}`);
+  }
+  
+  private sendOrderConfirmation(orderId: string): void {
+    console.log(`Enviando confirmação de pedido ${orderId}`);
+  }
+}
+
+@Injectable()
+export class AnalyticsService {
+  constructor(private eventBus: EventBus) {
+    this.listen();
+  }
+  
+  private listen(): void {
+    this.eventBus.on(UserRegisteredEvent).subscribe(event => {
+      console.log('Analytics: Novo usuário registrado');
+    });
+    
+    this.eventBus.on(OrderPlacedEvent).subscribe(event => {
+      console.log(`Analytics: Pedido de R$ ${event.total}`);
+    });
+  }
+}
+
+@Injectable()
+export class LoyaltyPointsService {
+  constructor(private eventBus: EventBus) {
+    this.listen();
+  }
+  
+  private listen(): void {
+    // Dá pontos quando faz pedido
+    this.eventBus.on(OrderPlacedEvent).subscribe(event => {
+      const points = Math.floor(event.total / 10);
+      this.addPoints(event.userId, points);
+    });
+  }
+  
+  private addPoints(userId: string, points: number): void {
+    console.log(`Adicionando ${points} pontos para usuário ${userId}`);
+  }
+}
+```
+
+## Vantagens
+
+1. **Desacoplamento:** Serviços não se conhecem
+2. **Escalável:** Adiciona subscribers sem modificar publishers
+3. **Auditável:** Log de todos os eventos
+
+## Quando Usar
+
+| ✅ Use quando | ❌ Evite quando |
+|--------------|----------------|
+| Múltiplos módulos reagindo ao mesmo evento | App simples com poucas integrações |
+| Precisa audit trail | Debugging complexo não justifica |
+| Microservices | Processamento síncrono obrigatório |
+
+---
+
+<a name="microfrontends"></a>
+# MICRO FRONTENDS
+
+## Conceito
+
+**Ideia:** Divida frontend em apps independentes.
+
+```
+┌─────────────────────────────────────────────┐
+│          Shell App (Container)              │
+│  ┌────────┐  ┌────────┐  ┌────────┐        │
+│  │ Header │  │Catalog │  │Checkout│        │
+│  │ Team A │  │ Team B │  │ Team C │        │
+│  └────────┘  └────────┘  └────────┘        │
+└─────────────────────────────────────────────┘
+
+Cada time tem:
+- Repositório separado
+- Deploy independente
+- Stack próprio (pode ser Angular, React, Vue)
+```
+
+## Estratégias de Implementação
+
+### 1. Module Federation (Webpack 5)
+
+```typescript
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// APP 1: Shell (Container)
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+// webpack.config.js (shell)
+const ModuleFederationPlugin = require('webpack/lib/container/ModuleFederationPlugin');
+
+module.exports = {
+  plugins: [
+    new ModuleFederationPlugin({
+      name: 'shell',
+      remotes: {
+        catalog: 'catalog@http://localhost:4201/remoteEntry.js',
+        checkout: 'checkout@http://localhost:4202/remoteEntry.js'
       },
-      error: (err) => {
-        if (err instanceof InsufficientFundsError) {
-          this.error = `Saldo insuficiente. Saldo atual: R$ ${err.currentBalance}`;
-        } else if (err instanceof AccountNotActiveError) {
-          this.error = `Conta está ${err.status}. Apenas contas ativas podem transferir.`;
-        } else {
-          this.error = 'Erro inesperado. Tente novamente.';
-        }
-        this.loading = false;
+      shared: {
+        '@angular/core': { singleton: true },
+        '@angular/common': { singleton: true }
       }
+    })
+  ]
+};
+
+// app-routing.module.ts (shell)
+const routes: Routes = [
+  {
+    path: 'catalog',
+    loadChildren: () => import('catalog/Module').then(m => m.CatalogModule)
+  },
+  {
+    path: 'checkout',
+    loadChildren: () => import('checkout/Module').then(m => m.CheckoutModule)
+  }
+];
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// APP 2: Catalog (Remote)
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+// webpack.config.js (catalog)
+module.exports = {
+  plugins: [
+    new ModuleFederationPlugin({
+      name: 'catalog',
+      filename: 'remoteEntry.js',
+      exposes: {
+        './Module': './src/app/catalog/catalog.module.ts'
+      },
+      shared: {
+        '@angular/core': { singleton: true },
+        '@angular/common': { singleton: true }
+      }
+    })
+  ]
+};
+```
+
+### 2. iframes (Simples mas limitado)
+
+```typescript
+// shell.component.ts
+@Component({
+  selector: 'app-shell',
+  template: `
+    <nav>
+      <a (click)="navigate('catalog')">Catálogo</a>
+      <a (click)="navigate('checkout')">Checkout</a>
+    </nav>
+    
+    <iframe 
+      [src]="currentUrl | safe" 
+      width="100%" 
+      height="600">
+    </iframe>
+  `
+})
+export class ShellComponent {
+  currentUrl = 'http://localhost:4201';
+  
+  navigate(app: string): void {
+    const urls = {
+      catalog: 'http://localhost:4201',
+      checkout: 'http://localhost:4202'
+    };
+    this.currentUrl = urls[app];
+  }
+}
+```
+
+### 3. Web Components
+
+```typescript
+// catalog-app (web component)
+@Component({
+  selector: 'catalog-app',
+  template: `<h1>Catálogo</h1>`
+})
+export class CatalogAppComponent {}
+
+// main.ts (catalog)
+import { createCustomElement } from '@angular/elements';
+
+const CatalogElement = createCustomElement(CatalogAppComponent, {
+  injector: this.injector
+});
+customElements.define('catalog-app', CatalogElement);
+
+// shell.component.html
+<catalog-app></catalog-app>
+<checkout-app></checkout-app>
+```
+
+## Comunicação Entre Microfrontends
+
+```typescript
+// shared-events.service.ts
+@Injectable({ providedIn: 'root' })
+export class SharedEventsService {
+  private subject = new Subject<any>();
+  
+  publish(event: any): void {
+    // Também publica no window para comunicação cross-app
+    window.postMessage(event, '*');
+    this.subject.next(event);
+  }
+  
+  on(): Observable<any> {
+    return merge(
+      this.subject.asObservable(),
+      fromEvent(window, 'message').pipe(
+        map((event: any) => event.data)
+      )
+    );
+  }
+}
+
+// catalog-app usa
+this.sharedEvents.publish({ type: 'PRODUCT_ADDED', productId: '123' });
+
+// checkout-app escuta
+this.sharedEvents.on().subscribe(event => {
+  if (event.type === 'PRODUCT_ADDED') {
+    this.addToCart(event.productId);
+  }
+});
+```
+
+## Estrutura de Monorepo
+
+```
+apps/
+├── shell/                    # Container app
+│   ├── src/
+│   └── webpack.config.js
+│
+├── catalog/                  # Microfrontend 1
+│   ├── src/
+│   └── webpack.config.js
+│
+├── checkout/                 # Microfrontend 2
+│   ├── src/
+│   └── webpack.config.js
+│
+└── shared/                   # Libs compartilhadas
+    ├── ui-components/
+    ├── utils/
+    └── types/
+```
+
+## Quando Usar
+
+| ✅ Use quando | ❌ Evite quando |
+|--------------|----------------|
+| Times grandes (50+ devs) | Time pequeno (<10 devs) |
+| Deploy independente necessário | Deploy monolítico ok |
+| Times autônomos | Forte interdependência |
+| Escala horizontal | App pequeno/médio |
+
+---
+
+<a name="comparacao"></a>
+# COMPARAÇÃO DAS ARQUITETURAS
+
+## Tabela Resumida
+
+| Arquitetura | Complexidade | Testabilidade | Escalabilidade | Quando Usar |
+|-------------|--------------|---------------|----------------|-------------|
+| **Layered** | ⭐ Baixa | ⭐⭐ Média | ⭐⭐ Média | Apps médios, CRUD |
+| **Clean** | ⭐⭐⭐ Alta | ⭐⭐⭐⭐⭐ Excelente | ⭐⭐⭐⭐ Alta | Domínio rico, longo prazo |
+| **Hexagonal** | ⭐⭐⭐ Alta | ⭐⭐⭐⭐⭐ Excelente | ⭐⭐⭐⭐ Alta | Múltiplas integrações |
+| **DDD** | ⭐⭐⭐⭐ Muito Alta | ⭐⭐⭐⭐ Alta | ⭐⭐⭐⭐⭐ Excelente | Domínio complexo |
+| **CQRS** | ⭐⭐⭐⭐ Muito Alta | ⭐⭐⭐ Média | ⭐⭐⭐⭐⭐ Excelente | Leitura >> Escrita |
+| **Event-Driven** | ⭐⭐⭐ Alta | ⭐⭐⭐ Média | ⭐⭐⭐⭐⭐ Excelente | Microservices, Audit |
+| **Micro Frontends** | ⭐⭐⭐⭐⭐ Extrema | ⭐⭐ Baixa | ⭐⭐⭐⭐⭐ Excelente | Times grandes, autonomia |
+
+## Por Tamanho de Projeto
+
+```
+Projeto Pequeno (1-5 devs, 1-6 meses)
+└─> Layered ou Clean simplificado
+
+Projeto Médio (5-15 devs, 6-24 meses)
+└─> Clean ou Hexagonal
+
+Projeto Grande (15-50 devs, 2+ anos)
+└─> DDD + Clean ou Hexagonal
+
+Projeto Enterprise (50+ devs, múltiplos times)
+└─> DDD + CQRS + Event-Driven + Micro Frontends
+```
+
+---
+
+<a name="estruturas"></a>
+# ESTRUTURAS DE PASTAS
+
+## 1. Clean Architecture
+
+```
+src/app/
+├── core/
+│   ├── domain/
+│   │   ├── entities/
+│   │   ├── value-objects/
+│   │   ├── repositories/        # Interfaces
+│   │   └── errors/
+│   │
+│   └── application/
+│       └── use-cases/
+│
+├── infrastructure/
+│   ├── repositories/            # Implementations
+│   ├── http/
+│   └── storage/
+│
+└── presentation/
+    ├── pages/
+    └── components/
+```
+
+## 2. DDD
+
+```
+src/app/
+├── bounded-contexts/
+│   ├── catalog/
+│   │   ├── domain/
+│   │   ├── application/
+│   │   └── infrastructure/
+│   │
+│   ├── sales/
+│   │   ├── domain/
+│   │   ├── application/
+│   │   └── infrastructure/
+│   │
+│   └── shipping/
+│       └── ...
+│
+└── shared/
+    ├── kernel/
+    └── infrastructure/
+```
+
+## 3. Feature-Sliced
+
+```
+src/app/
+├── features/
+│   ├── auth/
+│   │   ├── components/
+│   │   ├── services/
+│   │   ├── store/
+│   │   └── auth.routes.ts
+│   │
+│   ├── products/
+│   │   └── ...
+│   │
+│   └── cart/
+│       └── ...
+│
+├── shared/
+│   ├── ui/
+│   ├── utils/
+│   └── types/
+│
+└── core/
+    ├── services/
+    └── guards/
+```
+
+---
+
+<a name="migracao"></a>
+# COMO MIGRAR PARA CLEAN ARCHITECTURE
+
+## Estratégia: Strangler Fig Pattern
+
+**Não reescreva tudo! Migre gradualmente.**
+
+```
+┌──────────────────────────────────┐
+│     APP LEGADO (Monolito)        │
+│  ┌────────────────────────────┐  │
+│  │  Features existentes       │  │
+│  │  (código antigo)           │  │
+│  └────────────────────────────┘  │
+│                                   │
+│  ┌────────────────────────────┐  │
+│  │  Nova Feature              │  │ ← Nova feature já em Clean
+│  │  (Clean Architecture)      │  │
+│  └────────────────────────────┘  │
+│                                   │
+│  ┌────────────────────────────┐  │
+│  │  Feature migrada           │  │ ← Feature antiga migrada
+│  │  (Clean Architecture)      │  │
+│  └────────────────────────────┘  │
+└──────────────────────────────────┘
+
+Aos poucos, Clean "estrangula" o legado
+```
+
+## Passo a Passo
+
+### Passo 1: Crie estrutura de pastas
+
+```bash
+mkdir -p src/app/core/domain/entities
+mkdir -p src/app/core/domain/repositories
+mkdir -p src/app/core/application/use-cases
+mkdir -p src/app/infrastructure/repositories
+```
+
+### Passo 2: Escolha UMA feature para migrar
+
+Comece pela mais simples!
+
+```typescript
+// ANTES (Legado)
+@Component({...})
+export class UserListComponent {
+  users: any[] = [];
+  
+  constructor(private http: HttpClient) {}
+  
+  ngOnInit() {
+    this.http.get('/api/users').subscribe(data => {
+      this.users = data;
     });
   }
 }
 ```
 
-**Component é apenas apresentação:**
-- ✅ **Delega lógica:** Use case faz o trabalho
-- ✅ **Trata erros:** Apresenta mensagens user-friendly
-- ✅ **Sem lógica de negócio:** Só orquestra UI
-
-### 4.3 Dependency Injection - Conectando as Camadas
+### Passo 3: Extraia Entity
 
 ```typescript
-// app.config.ts (Angular 15+ standalone)
-
-import { ApplicationConfig } from '@angular/core';
-import { provideRouter } from '@angular/router';
-import { provideHttpClient } from '@angular/common/http';
-
-// Domain interfaces
-import { AccountRepository } from '@core/domain/repositories/account.repository';
-import { CustomerRepository } from '@core/domain/repositories/customer.repository';
-import { AccountNumberGenerator } from '@core/domain/services/account-number-generator.service';
-
-// Infrastructure implementations
-import { AccountHttpRepository } from '@infrastructure/repositories/account-http.repository';
-import { CustomerHttpRepository } from '@infrastructure/repositories/customer-http.repository';
-import { AccountNumberGeneratorImpl } from '@infrastructure/services/account-number-generator.impl';
-
-export const appConfig: ApplicationConfig = {
-  providers: [
-    provideRouter(routes),
-    provideHttpClient(),
-    
-    // Injeta implementações quando alguém pede interfaces
-    { provide: AccountRepository, useClass: AccountHttpRepository },
-    { provide: CustomerRepository, useClass: CustomerHttpRepository },
-    { provide: AccountNumberGenerator, useClass: AccountNumberGeneratorImpl },
-    
-    // Use Cases são auto-injetados (providedIn: 'root')
-  ]
-};
-```
-
-**Para trocar implementação (ex: testes):**
-
-```typescript
-// app.config.test.ts
-
-export const testConfig: ApplicationConfig = {
-  providers: [
-    // Usa mocks em vez de HTTP
-    { provide: AccountRepository, useClass: AccountMockRepository },
-    { provide: CustomerRepository, useClass: CustomerMockRepository },
-    { provide: AccountNumberGenerator, useClass: AccountNumberGeneratorMock },
-  ]
-};
-```
-
-### 4.4 Testando Clean Architecture
-
-#### **Teste de Entity (Domain - Mais Fácil)**
-
-```typescript
-// account.entity.spec.ts
-
-describe('Account Entity', () => {
-  let account: Account;
+// core/domain/entities/user.entity.ts
+export class User {
+  constructor(
+    public id: string,
+    public name: string,
+    public email: string
+  ) {}
   
-  beforeEach(() => {
-    account = new Account(
-      AccountId.generate(),
-      CustomerId.generate(),
-      '12345-6',
-      AccountType.CHECKING,
-      new Money(1000, 'BRL'),
-      AccountStatus.ACTIVE
+  isActive(): boolean {
+    return this.status === 'active';
+  }
+}
+```
+
+### Passo 4: Crie Repository Interface
+
+```typescript
+// core/domain/repositories/user.repository.ts
+export abstract class UserRepository {
+  abstract findAll(): Observable<User[]>;
+  abstract findById(id: string): Observable<User>;
+}
+```
+
+### Passo 5: Implemente Repository
+
+```typescript
+// infrastructure/repositories/user-http.repository.ts
+@Injectable()
+export class UserHttpRepository implements UserRepository {
+  constructor(private http: HttpClient) {}
+  
+  findAll(): Observable<User[]> {
+    return this.http.get<any[]>('/api/users').pipe(
+      map(dtos => dtos.map(dto => new User(dto.id, dto.name, dto.email)))
     );
-  });
-  
-  it('should withdraw money successfully', () => {
-    account.withdraw(new Money(500, 'BRL'), 'ATM withdrawal');
-    
-    expect(account.balance.amount).toBe(500);
-    expect(account.transactions.length).toBe(1);
-  });
-  
-  it('should throw error when withdrawing more than balance', () => {
-    expect(() => {
-      account.withdraw(new Money(1500, 'BRL'), 'ATM withdrawal');
-    }).toThrow(InsufficientFundsError);
-  });
-  
-  it('should not allow operations on blocked account', () => {
-    account.block('Suspicious activity');
-    
-    expect(() => {
-      account.withdraw(new Money(100, 'BRL'), 'ATM');
-    }).toThrow(AccountNotActiveError);
-  });
-});
+  }
+}
 ```
 
-**Por que é fácil:**
-- ✅ Sem dependências externas
-- ✅ Sem mocks necessários
-- ✅ Testa lógica pura
-
-#### **Teste de Use Case**
+### Passo 6: Crie Use Case
 
 ```typescript
-// transfer-money.usecase.spec.ts
-
-describe('TransferMoneyUseCase', () => {
-  let useCase: TransferMoneyUseCase;
-  let mockRepo: jasmine.SpyObj<AccountRepository>;
+// core/application/use-cases/get-users.usecase.ts
+@Injectable()
+export class GetUsersUseCase {
+  constructor(private repo: UserRepository) {}
   
-  beforeEach(() => {
-    mockRepo = jasmine.createSpyObj('AccountRepository', ['findById', 'save']);
-    useCase = new TransferMoneyUseCase(mockRepo);
-  });
+  execute(): Observable<User[]> {
+    return this.repo.findAll();
+  }
+}
+```
+
+### Passo 7: Atualize Component
+
+```typescript
+// presentation/user-list.component.ts (MIGRADO)
+@Component({...})
+export class UserListComponent {
+  users$ = this.getUsers.execute();
   
-  it('should transfer money between accounts', (done) => {
-    const fromAccount = new Account(/* ... */);
-    const toAccount = new Account(/* ... */);
-    
-    mockRepo.findById.and.returnValues(of(fromAccount), of(toAccount));
-    mockRepo.save.and.returnValue(of(fromAccount));
-    
-    const command: TransferMoneyCommand = {
-      fromAccountId: fromAccount.id.value,
-      toAccountId: toAccount.id.value,
-      amount: 500,
-      currency: 'BRL'
-    };
-    
-    useCase.execute(command).subscribe(result => {
-      expect(result.success).toBe(true);
-      expect(mockRepo.save).toHaveBeenCalledTimes(2);
-      done();
-    });
-  });
-  
-  it('should throw error when insufficient funds', (done) => {
-    const fromAccount = new Account(/* saldo: 100 */);
-    const toAccount = new Account(/* ... */);
-    
-    mockRepo.findById.and.returnValues(of(fromAccount), of(toAccount));
-    
-    const command: TransferMoneyCommand = {
-      fromAccountId: fromAccount.id.value,
-      toAccountId: toAccount.id.value,
-      amount: 500, // Mais que o saldo!
-      currency: 'BRL'
-    };
-    
-    useCase.execute(command).subscribe(
-      () => fail('Should have thrown error'),
-      err => {
-        expect(err).toBeInstanceOf(InsufficientFundsError);
-        done();
-      }
-    );
-  });
-});
+  constructor(private getUsers: GetUsersUseCase) {}
+}
 ```
 
-### 4.5 Estrutura de Pastas Completa
+### Passo 8: Configure DI
 
-```
-src/
-├── app/
-│   ├── core/                           # Enterprise Business Rules
-│   │   ├── domain/
-│   │   │   ├── entities/
-│   │   │   │   ├── account.entity.ts
-│   │   │   │   ├── customer.entity.ts
-│   │   │   │   └── transaction.entity.ts
-│   │   │   ├── value-objects/
-│   │   │   │   ├── account-id.vo.ts
-│   │   │   │   ├── money.vo.ts
-│   │   │   │   └── email.vo.ts
-│   │   │   ├── repositories/          # Interfaces
-│   │   │   │   ├── account.repository.ts
-│   │   │   │   └── customer.repository.ts
-│   │   │   ├── services/              # Domain Services
-│   │   │   │   └── account-number-generator.service.ts
-│   │   │   └── errors/
-│   │   │       ├── domain.error.ts
-│   │   │       ├── insufficient-funds.error.ts
-│   │   │       └── account-not-active.error.ts
-│   │   │
-│   │   └── application/               # Application Business Rules
-│   │       └── use-cases/
-│   │           ├── transfer-money.usecase.ts
-│   │           ├── create-account.usecase.ts
-│   │           ├── get-account.usecase.ts
-│   │           └── close-account.usecase.ts
-│   │
-│   ├── infrastructure/                # Interface Adapters
-│   │   ├── repositories/              # Implementations
-│   │   │   ├── account-http.repository.ts
-│   │   │   ├── account-localstorage.repository.ts
-│   │   │   └── customer-http.repository.ts
-│   │   ├── services/
-│   │   │   └── account-number-generator.impl.ts
-│   │   ├── http/
-│   │   │   ├── interceptors/
-│   │   │   │   ├── auth.interceptor.ts
-│   │   │   │   └── error.interceptor.ts
-│   │   │   └── api.service.ts
-│   │   └── mappers/
-│   │       ├── account.mapper.ts
-│   │       └── customer.mapper.ts
-│   │
-│   └── presentation/                  # Frameworks & Drivers
-│       ├── pages/
-│       │   ├── accounts/
-│       │   │   ├── account-list/
-│       │   │   ├── account-detail/
-│       │   │   ├── transfer/
-│       │   │   └── create-account/
-│       │   └── customers/
-│       │       └── customer-detail/
-│       ├── components/                # Dumb components
-│       │   ├── account-card/
-│       │   ├── transaction-list/
-│       │   └── balance-display/
-│       └── shared/
-│           ├── pipes/
-│           ├── directives/
-│           └── validators/
-│
-├── environments/
-└── assets/
+```typescript
+// app.config.ts
+providers: [
+  { provide: UserRepository, useClass: UserHttpRepository }
+]
 ```
 
-### 4.6 Quando Usar Clean Architecture
+### Passo 9: Repita para outras features
 
-✅ **Use quando:**
+Migre uma feature por sprint, não tudo de uma vez!
 
-| Critério | Descrição |
-|----------|-----------|
-| **Domínio Complexo** | Muitas regras de negócio, validações, invariants |
-| **Longo Prazo** | App vai durar 3+ anos |
-| **Múltiplos Clientes** | Web + Mobile + Desktop compartilham domínio |
-| **Time Grande** | 10+ desenvolvedores |
-| **Criticidade Alta** | Banco, saúde, seguros, financeiro |
-| **Testabilidade** | Cobertura de testes >80% necessária |
-| **Independência** | Quer trocar framework futuramente |
+---
 
-❌ **NÃO use quando:**
+<a name="checklist"></a>
+# CHECKLIST DE DECISÃO
 
-| Critério | Descrição |
-|----------|-----------|
-| **CRUD Simples** | Só formulários básicos, sem lógica |
-| **MVP/Protótipo** | App descartável, validação de ideia |
-| **Time Pequeno** | 1-2 devs, overhead não compensa |
-| **Deadline Apertado** | Precisa entregar em 2 semanas |
-| **Sem Complexidade** | Todo-list, blog pessoal |
+## Perguntas para Escolher Arquitetura
 
-### 4.7 Clean Architecture - Resumo Visual
+### 1. Tamanho do Projeto
+
+- [ ] 1-3 devs → **Layered**
+- [ ] 3-10 devs → **Clean** ou **Hexagonal**
+- [ ] 10-30 devs → **DDD + Clean**
+- [ ] 30+ devs → **DDD + Micro Frontends**
+
+### 2. Complexidade do Domínio
+
+- [ ] CRUD simples → **Layered**
+- [ ] Regras de negócio médias → **Clean**
+- [ ] Domínio rico e complexo → **DDD**
+- [ ] Múltiplos contextos → **DDD + Bounded Contexts**
+
+### 3. Tempo de Vida
+
+- [ ] 1-6 meses → **Layered** ou sem arquitetura
+- [ ] 6 meses - 2 anos → **Clean**
+- [ ] 2-5 anos → **DDD + Clean**
+- [ ] 5+ anos → **DDD + CQRS + Event-Driven**
+
+### 4. Necessidades Especiais
+
+- [ ] Performance de leitura crítica → **CQRS**
+- [ ] Auditoria obrigatória → **Event-Driven**
+- [ ] Múltiplas integrações → **Hexagonal**
+- [ ] Deploy independente → **Micro Frontends**
+- [ ] Testabilidade máxima → **Clean** ou **Hexagonal**
+
+### 5. Time
+
+- [ ] Júnior → **Layered** (simples)
+- [ ] Pleno → **Clean** (médio)
+- [ ] Sênior → **DDD** (complexo)
+- [ ] Múltiplos times → **Micro Frontends**
+
+## Decisão Final
+
+**Regra de Ouro:** Comece simples, refatore quando necessário.
 
 ```
-┌────────────────────────────────────────────────────┐
-│                   BENEFÍCIOS                        │
-├────────────────────────────────────────────────────┤
-│ ✅ Testabilidade máxima                            │
-│ ✅ Independência de framework                      │
-│ ✅ Fácil trocar infraestrutura (DB, API)          │
-│ ✅ Regras de negócio protegidas                   │
-│ ✅ Escalável para times grandes                   │
-│ ✅ Manutenível a longo prazo                      │
-└────────────────────────────────────────────────────┘
-
-┌────────────────────────────────────────────────────┐
-│                   CUSTOS                            │
-├────────────────────────────────────────────────────┤
-│ ❌ Mais arquivos/pastas (complexidade inicial)     │
-│ ❌ Curva de aprendizado                            │
-│ ❌ Overhead para apps simples                      │
-│ ❌ Mais código boilerplate                         │
-│ ❌ Time precisa conhecer arquitetura               │
-└────────────────────────────────────────────────────┘
-
-                PONTO DE EQUILÍBRIO
-                       ↓
-    Pequeno  ←──────────────────→  Grande
-    Simples  ←──────────────────→  Complexo
-    Curto prazo ←────────────────→ Longo prazo
-    
-         NÃO VALE          VALE MUITO
+MVP → Layered
+  ↓ Cresce
+Clean Architecture
+  ↓ Fica complexo
+DDD + Clean
+  ↓ Times grandes
+Micro Frontends
 ```
 
 ---
 
-_(Continua com DDD, Hexagonal, CQRS, Event-Driven, Micro Frontends, Comparações, Migração, etc...)_
+# 🎯 RESUMO EXECUTIVO
 
-**Documento está com ~25% completo. Quer que eu:**
-1. Continue expandindo as outras arquiteturas?
-2. Foque em alguma arquitetura específica?
-3. Vá direto pra parte de comparação e quando usar?
-4. Crie exemplos mais práticos de migração?
+## Se tem 5 minutos, leia isso:
 
-Qual você prefere?
+**Layered:** Bom para começar (⭐ simplicidade)  
+**Clean:** Melhor opção para maioria dos casos (⭐⭐⭐ testável, manutenível)  
+**Hexagonal:** Quando precisa trocar infraestrutura facilmente  
+**DDD:** Quando domínio é rico e complexo  
+**CQRS:** Quando leitura >> escrita  
+**Event-Driven:** Quando precisa de audit trail e desacoplamento  
+**Micro Frontends:** Quando tem 50+ devs em times autônomos  
+
+**Recomendação Padrão:**
+- Projeto pequeno/médio → **Clean Architecture**
+- Projeto grande → **DDD + Clean Architecture**
+- Empresa → **DDD + CQRS + Event-Driven + Micro Frontends**
+
+**Migração:** Use Strangler Fig Pattern (migre gradualmente)
+
+---
+
+## 📚 RECURSOS EXTRAS
+
+### Livros
+- Clean Architecture (Robert C. Martin)
+- Domain-Driven Design (Eric Evans)
+- Building Microservices (Sam Newman)
+
+### Links
+- https://blog.cleancoder.com
+- https://martinfowler.com/architecture/
+- https://angular.io/guide/architecture
+
+---
+
+**FIM DO GUIA**
+
+Este documento é um guia prático. Adapte conforme seu contexto!
+
+**Boa arquitetura não é a mais complexa, é a adequada ao seu problema.**
